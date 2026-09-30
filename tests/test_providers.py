@@ -11,7 +11,8 @@ from pydantic import BaseModel
 from mara.core.config import Settings
 from mara.llm.base import LLMError, LLMProvider, RetryableLLMError
 from mara.llm.cached import CachedLLM
-from mara.llm.factory import build_base_provider, build_llm
+from mara.llm.composite import CompositeProvider
+from mara.llm.factory import build_base_provider, build_llm, llm_configuration_error
 from mara.llm.gemini import GeminiProvider
 from mara.llm.openai_provider import OpenAIProvider
 from mara.llm.resilience import ResilientLLM
@@ -70,11 +71,17 @@ async def test_gemini_errors_are_translated(code, expected):
     assert type(info.value) is expected
 
 
-async def test_gemini_embed_returns_vectors_in_order():
+async def test_gemini_embed_returns_vectors_in_order_with_task_type():
+    sink: list[dict] = []
     resp = SimpleNamespace(embeddings=[SimpleNamespace(values=[1.0, 2.0]),
                                        SimpleNamespace(values=[3.0, 4.0])])  # fmt: skip
-    p = gemini_with(embed=async_returning(resp))
+    p = gemini_with(embed=async_returning(resp, sink=sink))
+    p.embedding_dimensions = 2
     assert await p.embed(["a", "b"]) == [[1.0, 2.0], [3.0, 4.0]]
+    assert sink[0]["config"].task_type == "RETRIEVAL_DOCUMENT"
+    assert sink[0]["config"].output_dimensionality == 2
+    await p.embed(["q"], kind="query")
+    assert sink[1]["config"].task_type == "RETRIEVAL_QUERY"
 
 
 # ---------------- OpenAI ----------------
@@ -115,32 +122,66 @@ async def test_openai_rate_limit_is_retryable():
         await p.generate("q")
 
 
-async def test_openai_embed_sorts_by_index():
+async def test_openai_embed_sorts_by_index_and_passes_dimensions():
+    sink: list[dict] = []
     resp = SimpleNamespace(data=[SimpleNamespace(index=1, embedding=[2.0]),
                                  SimpleNamespace(index=0, embedding=[1.0])])  # fmt: skip
-    p = openai_with(embed=async_returning(resp))
+    p = openai_with(embed=async_returning(resp, sink=sink))
     assert await p.embed(["a", "b"]) == [[1.0], [2.0]]
+    assert "dimensions" not in sink[0]
+    p.embedding_dimensions = 256
+    await p.embed(["a"], kind="query")
+    assert sink[1]["dimensions"] == 256
 
 
 # ---------------- Factory ----------------
 
 
+def settings(**kw) -> Settings:
+    kw.setdefault("embedding_provider", "gemini")  # never load the local model in unit tests
+    return Settings(_env_file=None, **kw)
+
+
 def test_factory_picks_provider_from_config():
-    g = build_base_provider(Settings(_env_file=None, llm_provider="gemini", gemini_api_key="k"))
-    o = build_base_provider(Settings(_env_file=None, llm_provider="openai", openai_api_key="k"))
-    assert isinstance(g, GeminiProvider) and isinstance(o, OpenAIProvider)
-    assert isinstance(g, LLMProvider) and isinstance(o, LLMProvider)
+    g = build_base_provider(settings(llm_provider="gemini", gemini_api_key="k"))
+    o = build_base_provider(
+        settings(llm_provider="openai", openai_api_key="k", embedding_provider="openai")
+    )
+    assert isinstance(g, CompositeProvider) and isinstance(g, LLMProvider)
+    assert isinstance(g._generator, GeminiProvider) and g._embedder is g._generator
+    assert isinstance(o._generator, OpenAIProvider) and o.embedding_provider == "openai"
 
 
-def test_factory_fails_clearly_without_api_key():
-    with pytest.raises(ValueError, match="GEMINI_API_KEY"):
-        build_base_provider(Settings(_env_file=None, llm_provider="gemini", gemini_api_key=None))
+def test_mixed_vendors_build_a_separate_embedder():
+    p = build_base_provider(
+        settings(llm_provider="gemini", gemini_api_key="k", openai_api_key="k2",
+                 embedding_provider="openai")
+    )  # fmt: skip
+    assert isinstance(p._generator, GeminiProvider)
+    assert isinstance(p._embedder, OpenAIProvider)
+    assert (p.name, p.embedding_provider) == ("gemini", "openai")
+
+
+async def test_missing_llm_key_still_embeds_but_cannot_generate():
+    s = settings(llm_provider="gemini", gemini_api_key=None, openai_api_key="k",
+                 embedding_provider="openai")  # fmt: skip
+    assert "GEMINI_API_KEY" in llm_configuration_error(s)
+    p = build_base_provider(s)
+    assert p.has_generator is False and isinstance(p._embedder, OpenAIProvider)
+    with pytest.raises(LLMError, match="GEMINI_API_KEY"):
+        await p.generate("q")
+
+
+def test_missing_embedding_key_fails_clearly():
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        build_base_provider(settings(gemini_api_key="k", embedding_provider="openai"))
 
 
 def test_factory_stacks_cache_outside_resilience():
     import fakeredis
 
-    llm = build_llm(Settings(_env_file=None, gemini_api_key="k"), fakeredis.FakeAsyncRedis())
+    llm = build_llm(settings(gemini_api_key="k"), fakeredis.FakeAsyncRedis())
     assert isinstance(llm, CachedLLM)
     assert isinstance(llm.inner, ResilientLLM)
-    assert isinstance(llm.inner.inner, GeminiProvider)
+    assert isinstance(llm.inner.inner, CompositeProvider)
+    assert llm.inner._embedding_limiter is not None  # API embeddings are rate limited

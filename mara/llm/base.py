@@ -32,6 +32,7 @@ class RetryableLLMError(LLMError):
 class LLMProvider(Protocol):
     name: str  # "gemini" | "openai" | "fake"; part of every cache key
     model: str
+    embedding_provider: str  # "gemini" | "openai" | "local"; may differ from `name`
     embedding_model: str
     embedding_dimensions: int | None  # None = the model's native size
 

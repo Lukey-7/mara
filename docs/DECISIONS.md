@@ -152,3 +152,55 @@ one giant chunk. Giant chunks hurt retrieval precision and overflow the reranker
 window, so anything over `MAX_CHUNK_CHARS` is re-packed sentence by sentence
 (`pack_sentences`). The percentile default is 90 (LlamaIndex's default 95 produced too few
 splits on short notes).
+
+## D14. Query pipeline = Haystack components, one small graph per configuration (Phase 3)
+
+`mara/retrieval/hybrid.py` wires `InMemoryBM25Retriever`, a custom `ProviderQueryEmbedder`
+(so query embeddings go through our cache/rate-limit stack), chroma-haystack's
+`ChromaEmbeddingRetriever`, `DocumentJoiner(join_mode="reciprocal_rank_fusion")` and the
+`SentenceTransformersSimilarityRanker` (cross-encoder `ms-marco-MiniLM-L-6-v2`, from the
+`sentence-transformers-haystack` package: Haystack 3 moved it out of core). Each
+(mode, rerank) combination is its own `Pipeline` built lazily and cached: "BM25 only" is a
+2-node graph, "hybrid + rerank" a 5-node graph. Why not one graph with stages switched off:
+the eval must report the latency of each configuration honestly, and a graph that always
+runs both retrievers cannot do that. Cost: the cross-encoder is instantiated once (only the
+rerank graph has it); retriever components are cheap wrappers over shared stores.
+
+## D15. BM25 copy lives in Haystack's in-memory store, rebuilt from Chroma (Phase 3)
+
+Chroma is the source of truth. `BM25Index` (InMemoryDocumentStore, BM25L) is filled from
+`ChunkStore.all_chunks()` at startup and kept in sync by the ingestion pipeline's dual write
+(`IngestionPipeline(indexes=[bm25])`, delete propagates too). The two writes are not atomic;
+a crash between them leaves the BM25 copy behind until the next restart heals it. Chosen over
+Elasticsearch/OpenSearch because the goal is one process on a laptop; the upgrade path is
+swapping `BM25Index` for an OpenSearch document store behind the same two methods.
+
+BM25L rather than textbook BM25Okapi: Okapi's IDF `log((N-n+0.5)/(n+0.5))` is ≤ 0 for any
+term in at least half the documents, which on a small or filtered corpus zeroes out perfectly
+good matches (found by a test: every BM25 score was 0.0 on a 4-document corpus).
+
+## D16. Local embeddings by default; API embeddings optional (Phase 3)
+
+`EMBEDDING_PROVIDER=local` runs `BAAI/bge-small-en-v1.5` (33M params, 384 dims) on the CPU
+via sentence-transformers. Ingestion and search then need no API key and no rate limiting,
+`make demo` works offline after the first model download, and the retrieval eval is
+reproducible. Gemini / OpenAI embeddings remain one config switch away (with task types and
+Matryoshka truncation, D11). The `CompositeProvider` pairs any generator with any embedder;
+with no LLM key configured it still embeds, so only `/research` (Phase 4) needs a key.
+Rate limiting is skipped for local embeddings (`embedding_limiter=None`).
+
+## D17. Filters written once, evaluated by both retrievers (Phase 3)
+
+`MetadataFilter.to_haystack()` produces Haystack's filter dict; chroma-haystack translates it
+to Chroma's `where`, and the in-memory store evaluates it in Python, so one filter reaches
+both legs of the hybrid search. Tags became boolean flags (`tag:raft = True`) next to the
+`tags` list because Haystack's in-memory filters have no list-membership operator; equality
+on a flag works in both stores. Chroma also rejects empty lists as metadata values, so `tags`
+is omitted when a chunk has none.
+
+## D18. Embedded Chroma option (Phase 3)
+
+`CHROMA_PERSIST_PATH=./data/chroma` uses an on-disk Chroma inside the API process instead of
+the server container: no Docker needed for local development, tests and evals. chroma-haystack
+only implements `run_async` for remote clients, so `ChromaDenseRetriever` wraps it and runs
+the sync method in a thread when embedded.

@@ -1,32 +1,16 @@
-"""End-to-end through FastAPI with fakes: fakeredis, EphemeralClient, FakeLLM, stubbed fetch."""
+"""End-to-end through FastAPI with fakes: fakeredis, embedded Chroma, FakeLLM, stubbed fetch."""
 
 from pathlib import Path
-from uuid import uuid4
 
-import chromadb
-import fakeredis
 import pytest
-from fastapi.testclient import TestClient
 
 import mara.api.ingest_routes as routes
-import mara.api.main as main
-import mara.llm.factory as factory
-from mara.core.config import Settings
-from tests.fakes import FakeLLM
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture
-def client(monkeypatch, tmp_path):
-    monkeypatch.setattr(main.redis.Redis, "from_url", lambda url: fakeredis.FakeAsyncRedis())
-    monkeypatch.setattr(factory, "build_base_provider", lambda settings: FakeLLM())
-
-    async def chroma_ok(settings):
-        return "ok"
-
-    monkeypatch.setattr(main, "_check_chroma", chroma_ok)
-
+def client(make_client, tmp_path):
     kb = tmp_path / "kb"
     kb.mkdir()
     (kb / "raft.md").write_text(
@@ -34,22 +18,8 @@ def client(monkeypatch, tmp_path):
         "## Replication\nLogs are replicated to followers.\n",
         encoding="utf-8",
     )
-    settings = Settings(
-        _env_file=None,
-        gemini_api_key="k",
-        chunking_strategy="fixed",
-        knowledge_base_dir=str(kb),
-        cache_enabled=False,
-        chroma_collection=f"api_{uuid4().hex[:8]}",  # EphemeralClient is process-shared
-    )
-    app = main.create_app(settings, chroma_client=chromadb.EphemeralClient())
-    with TestClient(app) as c:
+    with make_client(knowledge_base_dir=str(kb)) as c:
         yield c
-
-
-def test_health_reports_store_ready(client):
-    body = client.get("/health").json()
-    assert body["status"] == "ok" and body["checks"]["store"] == {"ready": True}
 
 
 def test_pdf_upload_then_list_then_delete(client):
@@ -71,8 +41,21 @@ def test_pdf_upload_then_list_then_delete(client):
     again = client.post("/ingest/pdf", files={"file": ("x.pdf", pdf, "application/pdf")})
     assert again.json()["status"] == "skipped_duplicate"
 
+    assert client.get("/health").json()["checks"]["retriever"]["bm25_documents"] == body["n_chunks"]
     assert client.delete(f"/documents/{body['doc_id']}").status_code == 200
     assert client.get("/documents").json() == []
+    assert client.get("/health").json()["checks"]["retriever"]["bm25_documents"] == 0
+
+
+def test_pdf_published_date_override(client):
+    pdf = (FIXTURES / "two_pages.pdf").read_bytes()
+    r = client.post(
+        "/ingest/pdf",
+        files={"file": ("two_pages.pdf", pdf, "application/pdf")},
+        data={"published_date": "2014-05-20"},
+    )
+    assert r.status_code == 200, r.text
+    assert client.get("/documents").json()[0]["published_date"] == "2014-05-20"
 
 
 def test_non_pdf_upload_is_rejected(client):

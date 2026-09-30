@@ -28,8 +28,9 @@ class Chunk(BaseModel):
 
     # --- Chroma record layout -------------------------------------------------------
     # Chroma metadata values must be str / int / float / bool / list-of-those; no None and no
-    # nested dicts. Dates are stored as int YYYYMMDD so range filters ($gte/$lte) work, and
-    # tags as a list so `{"tags": {"$contains": "raft"}}` works.
+    # nested dicts. Dates are stored as int YYYYMMDD so range filters ($gte/$lte) work. Tags
+    # are stored as a list (display) plus one boolean flag per tag (`tag:raft = True`) that
+    # both Chroma and Haystack's in-memory store can filter with a plain equality.
 
     def to_chroma_metadata(self) -> dict[str, Any]:
         meta: dict[str, Any] = {
@@ -37,9 +38,11 @@ class Chunk(BaseModel):
             "source_type": self.source_type,
             "title": self.title,
             "url_or_path": self.url_or_path,
-            "tags": list(self.tags),
             "ingested_at": self.ingested_at.isoformat(),
+            **{tag_flag(t): True for t in self.tags},
         }
+        if self.tags:  # Chroma rejects empty lists as metadata values
+            meta["tags"] = list(self.tags)
         if self.page is not None:
             meta["page"] = self.page
         if self.section is not None:
@@ -78,6 +81,10 @@ class DocumentInfo(BaseModel):
     ingested_at: datetime
     n_chunks: int
     pages: int | None = None
+
+
+def tag_flag(tag: str) -> str:
+    return f"tag:{tag.strip().lower()}"
 
 
 def date_to_int(d: date) -> int:

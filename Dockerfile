@@ -10,11 +10,19 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY mara ./mara
 RUN uv sync --frozen --no-dev --no-editable
 
+# Bake the two local models (bi-encoder ~130 MB, cross-encoder ~90 MB) into the image so a
+# container starts without network access and the first request is not a download.
+ENV HF_HOME=/app/.hf HF_HUB_DISABLE_PROGRESS_BARS=1
+RUN /app/.venv/bin/python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
+    SentenceTransformer('BAAI/bge-small-en-v1.5'); CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+
 # ---- Stage 2: slim runtime with only the venv + runtime files ----
 FROM python:3.12-slim AS runtime
 RUN useradd --create-home --uid 1000 app
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder --chown=app:app /app/.hf /app/.hf
+ENV HF_HOME=/app/.hf HF_HUB_OFFLINE=1
 COPY prompts ./prompts
 COPY knowledge_base ./knowledge_base
 COPY sample_corpus ./sample_corpus

@@ -13,6 +13,7 @@ RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
 class GeminiProvider:
     name = "gemini"
+    embedding_provider = "gemini"
 
     def __init__(
         self,

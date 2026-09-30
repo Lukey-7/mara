@@ -20,6 +20,10 @@ dependencies = [
     "chromadb==1.5.9",
     "trafilatura==2.2.0",
     "python-multipart==0.0.32",
+    "haystack-ai==3.2.0",
+    "chroma-haystack==4.5.0",
+    "sentence-transformers==6.1.0",
+    "sentence-transformers-haystack==0.1.2",
 ]
 
 [dependency-groups]
@@ -48,3 +52,13 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "ASYNC"]
+
+# CPU-only torch on Linux (Docker): the default PyPI wheel drags in ~2 GB of CUDA libraries
+# that a laptop-CPU reranker never uses. Windows/macOS PyPI wheels are already CPU-only.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

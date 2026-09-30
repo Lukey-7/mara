@@ -11,6 +11,7 @@ from mara.llm.base import EmbedKind, LLMResponse
 class FakeLLM:
     name = "fake"
     model = "fake-model"
+    embedding_provider = "fake"
     embedding_model = "fake-embed"
 
     def __init__(

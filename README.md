@@ -5,8 +5,8 @@ hybrid search (BM25 + dense + reranking) over PDFs, web pages and an internal kn
 **summarizes** it into verifiable evidence notes, **checks** coverage, and **writes** a
 citation-backed answer. Every run produces a trace of what each agent did.
 
-> Status: **Phase 2 of 6** (skeleton + ingestion). Retrieval, agents, evals and UI follow.
-> Numbers in this README will only ever come from `eval/`.
+> Status: **Phase 3 of 6** (skeleton, ingestion, hybrid retrieval). Agents, answer evals and
+> UI follow. Numbers in this README come only from `eval/`.
 
 ## Stack
 
@@ -18,6 +18,7 @@ citation-backed answer. Every run produces a trace of what each agent did.
 | Vector store | ChromaDB | persistent, metadata-filterable |
 | Cache / state | Redis | LLM + embedding cache, job status, rate limiting |
 | LLM | Gemini (default) / OpenAI | behind one `LLMProvider` interface |
+| Embeddings / reranking | sentence-transformers (local, CPU) or Gemini / OpenAI embeddings | `bge-small-en-v1.5`, `ms-marco-MiniLM-L-6-v2` |
 | Packaging | Docker Compose | `api` + `redis` + `chroma` |
 
 ## Run
@@ -62,6 +63,42 @@ fixed-size `SentenceSplitter` available via `CHUNKING_STRATEGY=fixed`. Compare t
 make compare-chunking
 ```
 
+Embeddings default to a local model (`BAAI/bge-small-en-v1.5`, CPU) so ingestion and search
+need no API key; set `EMBEDDING_PROVIDER=gemini|openai` to use API embeddings instead.
+
+## Hybrid retrieval
+
+```
+query ─┬─ BM25 (Haystack InMemoryBM25Retriever) ───────────────┐
+       └─ query embedding → ChromaEmbeddingRetriever ──────────┴→ DocumentJoiner (RRF) → cross-encoder → top_k
+```
+
+`POST /search` runs the pipeline alone, with metadata filters (`source_types`, `tags`,
+`doc_ids`, `date_from`/`date_to`) applied to both legs, and `config.mode`
+(`bm25` | `dense` | `hybrid`) / `config.rerank` to pick a configuration.
+
+Eval (`make eval-retrieval`; 35 questions over the sample corpus, 317 chunks, graded at the
+level of the relevant markdown section / PDF document; laptop CPU; 2026-09-30):
+
+| Configuration | Recall@5 | MRR@10 | mean latency (ms) | p50 latency (ms) |
+|---|---|---|---|---|
+| BM25 only | 0.871 | 0.797 | 4 | 4 |
+| Dense only (bge-small) | 0.857 | 0.809 | 36 | 35 |
+| Hybrid (RRF) | 0.914 | 0.790 | 53 | 53 |
+| Hybrid + rerank (ms-marco-MiniLM-L-6-v2) | 0.929 | 0.871 | 1790 | 1835 |
+
+Hybrid retrieval recovers what either leg misses; the cross-encoder fixes the ordering but
+costs ~1.8 s per query on a CPU. Two of 35 questions were missed by every configuration
+(on-topic PDF/web chunks outranked the labelled KB section). Small corpus: treat the ordering
+of configurations, not the absolute numbers, as the result. Details in
+[docs/LEARNING.md](docs/LEARNING.md#phase-3--hybrid-retrieval-haystack).
+
+Run without Docker at all (embedded Chroma, local models):
+
+```bash
+make run-local
+```
+
 ## Layout
 
 ```
@@ -69,7 +106,7 @@ mara/core       config, shared Chunk schema + Chroma layout, metadata filters, C
 mara/llm        LLMProvider protocol, Gemini/OpenAI adapters, retry+rate-limit, cache decorator
 mara/ingest     LlamaIndex loaders (PDF / HTML / markdown), semantic + fixed chunkers, pipeline
 mara/api        FastAPI app + ingestion routes
-mara/retrieval  (phase 3) Haystack hybrid retrieval pipeline
+mara/retrieval  Haystack pipelines: BM25 + dense → RRF → cross-encoder; own rrf.py; BM25 index
 mara/agents     (phase 4) Planner, Researcher, Summarizer, Critic, Writer + orchestrator
 knowledge_base/ internal KB: markdown notes with frontmatter (title, tags, published_date)
 sample_corpus/  public-domain-ish PDFs + URL list for demos and evals

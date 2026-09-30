@@ -29,5 +29,11 @@ logs:
 ingest-sample:  ## load knowledge_base/ + sample_corpus/ through the running API
 	uv run python scripts/ingest_sample_corpus.py
 
-compare-chunking:  ## semantic vs fixed-size chunking on one KB note (needs an API key)
+compare-chunking:  ## semantic vs fixed-size chunking on one KB note
 	uv run python scripts/compare_chunking.py knowledge_base/01-raft.md
+
+eval-retrieval: ## Recall@5 / MRR / latency for BM25, dense, hybrid, hybrid+rerank
+	uv run python eval/run_retrieval_eval.py
+
+run-local:      ## API with embedded Chroma + local embeddings, no Docker or API key needed
+	CHROMA_PERSIST_PATH=./data/chroma CACHE_ENABLED=false uv run uvicorn mara.api.main:app --port 8080

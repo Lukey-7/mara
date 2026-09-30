@@ -17,6 +17,7 @@ RETRYABLE_ERRORS = (
 
 class OpenAIProvider:
     name = "openai"
+    embedding_provider = "openai"
 
     def __init__(
         self,

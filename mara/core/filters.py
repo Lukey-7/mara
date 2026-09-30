@@ -1,7 +1,15 @@
-"""Metadata filter model + the builder that turns it into a Chroma `where` clause.
+"""Metadata filter model + the two builders that turn it into a store-specific filter.
 
-`MetadataFilter` is what the API and (from Phase 4) the Planner produce; `build_where` is
-the one function that knows Chroma's filter grammar. Keep it small enough to whiteboard.
+`MetadataFilter` is what the API and (from Phase 4) the Planner produce.
+- `to_haystack()` builds Haystack's filter dict, which BOTH retrievers in the query pipeline
+  accept (chroma-haystack translates it to Chroma's `where`; InMemoryBM25Retriever evaluates
+  it in Python).
+- `build_where()` builds Chroma's native `where` for admin paths (GET /documents).
+Both are short enough to whiteboard.
+
+Tags are stored twice on purpose: `tags` (list, for display) and one boolean flag per tag
+(`tag:raft = True`, for filtering), because Haystack's in-memory filters have no
+list-membership operator while `==` on a flag works everywhere.
 """
 
 from datetime import date
@@ -9,7 +17,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from mara.core.schema import SourceType, date_to_int
+from mara.core.schema import SourceType, date_to_int, tag_flag
 
 
 class MetadataFilter(BaseModel):
@@ -34,7 +42,7 @@ def build_where(f: MetadataFilter | None) -> dict[str, Any] | None:
     if f.doc_ids:
         conds.append({"doc_id": {"$in": list(f.doc_ids)}})
     if f.tags:
-        tag_conds = [{"tags": {"$contains": t}} for t in f.tags]
+        tag_conds = [{tag_flag(t): {"$eq": True}} for t in f.tags]
         conds.append(tag_conds[0] if len(tag_conds) == 1 else {"$or": tag_conds})
     if f.date_from:
         conds.append({"published_date": {"$gte": date_to_int(f.date_from)}})
@@ -43,3 +51,33 @@ def build_where(f: MetadataFilter | None) -> dict[str, Any] | None:
     if not conds:
         return None
     return conds[0] if len(conds) == 1 else {"$and": conds}
+
+
+def to_haystack(f: MetadataFilter | None) -> dict[str, Any] | None:
+    """Haystack grammar: leaves are `{"field": "meta.x", "operator": op, "value": v}`,
+    combined with `{"operator": "AND"|"OR", "conditions": [...]}`."""
+    if f is None:
+        return None
+    conds: list[dict[str, Any]] = []
+    if f.source_types:
+        conds.append({"field": "meta.source_type", "operator": "in", "value": list(f.source_types)})
+    if f.doc_ids:
+        conds.append({"field": "meta.doc_id", "operator": "in", "value": list(f.doc_ids)})
+    if f.tags:
+        tag_conds = [
+            {"field": f"meta.{tag_flag(t)}", "operator": "==", "value": True} for t in f.tags
+        ]
+        conds.append(
+            tag_conds[0] if len(tag_conds) == 1 else {"operator": "OR", "conditions": tag_conds}
+        )
+    if f.date_from:
+        conds.append(
+            {"field": "meta.published_date", "operator": ">=", "value": date_to_int(f.date_from)}
+        )
+    if f.date_to:
+        conds.append(
+            {"field": "meta.published_date", "operator": "<=", "value": date_to_int(f.date_to)}
+        )
+    if not conds:
+        return None
+    return conds[0] if len(conds) == 1 else {"operator": "AND", "conditions": conds}

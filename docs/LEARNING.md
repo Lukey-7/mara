@@ -233,3 +233,153 @@ you. `favor_precision=True` prefers dropping borderline content over keeping jun
    `chunk_id` for that paragraph? What happens on `upsert`?
 3. A teammate changes `EMBEDDING_DIMENSIONS` from 768 to 1536 and restarts the API. What does
    `/health` show, and what is the fix? Why is refusing better than continuing?
+
+---
+
+## Phase 3 — Hybrid retrieval (Haystack)
+
+### What exists now
+
+```
+mara/retrieval/hybrid.py      HaystackHybridRetriever: one Haystack Pipeline per (mode, rerank)
+mara/retrieval/components.py  ProviderQueryEmbedder, ChromaDenseRetriever, PassthroughRanker
+mara/retrieval/bm25_index.py  BM25Index: Haystack InMemoryDocumentStore (BM25L), synced with Chroma
+mara/retrieval/rrf.py         our own 10-line reciprocal_rank_fusion (tested against Haystack's)
+mara/retrieval/factory.py     build_retriever(): chroma-haystack store + cross-encoder ranker
+mara/core/filters.py          MetadataFilter.to_haystack(): one filter for both retrievers
+mara/llm/local_embeddings.py  LocalEmbeddingProvider (bge-small-en-v1.5, 384 dims, CPU)
+mara/llm/composite.py         CompositeProvider: generator (Gemini/OpenAI/None) + embedder
+mara/api/search_routes.py     POST /search
+eval/retrieval_eval.json      35 questions → relevant sections / documents
+eval/run_retrieval_eval.py    Recall@5, MRR@10, latency for 4 configurations
+```
+
+### The pipeline
+
+```
+POST /search {"query": "...", "filters": {...}, "config": {"mode": "hybrid", "rerank": true}}
+  └─ HaystackHybridRetriever.retrieve → Pipeline.run_async
+       ┌─ bm25:     InMemoryBM25Retriever(top_k=20, filters)           ~4 ms
+       ├─ embedder: ProviderQueryEmbedder → llm.embed([q], kind="query")
+       ├─ dense:    ChromaEmbeddingRetriever(top_k=20, filters)        ~35 ms incl. embedding
+       ├─ joiner:   DocumentJoiner(reciprocal_rank_fusion)  20+20 → ~30 unique
+       └─ ranker:   SentenceTransformersSimilarityRanker(ms-marco-MiniLM-L-6-v2, top_k=8)
+                    cross-encoder reads (query, chunk) pairs together  ~1.7 s on CPU
+  → RetrievalResult(chunks[rank, score, chunk], stage_counts, score_kind, latency_ms)
+```
+
+### Eval results (real numbers, `make eval-retrieval`, 2026-09-30)
+
+Corpus: 18 documents / 317 chunks (10 KB notes, 3 Wikipedia PDFs, 5 Wikipedia pages),
+semantic chunking, `BAAI/bge-small-en-v1.5` embeddings, 35 questions graded at the level of
+the relevant markdown section (PDFs: document level). Laptop CPU.
+
+| Configuration | Recall@5 | MRR@10 | mean latency (ms) | p50 latency (ms) |
+|---|---|---|---|---|
+| BM25 only | 0.871 | 0.797 | 4 | 4 |
+| Dense only | 0.857 | 0.809 | 36 | 35 |
+| Hybrid (RRF) | 0.914 | 0.790 | 53 | 53 |
+| Hybrid + rerank | 0.929 | 0.871 | 1790 | 1835 |
+
+Reading it honestly:
+- Hybrid beats either retriever alone on recall (+4–6 points): BM25 and dense fail on
+  *different* questions, and RRF keeps whatever either found. RRF alone does not improve MRR:
+  fusion promotes items both lists agree on, not necessarily the best one.
+- The cross-encoder is what fixes the ordering (MRR 0.79 → 0.87) because it reads query and
+  chunk together instead of comparing two independent vectors.
+- The price is ~1.8 s per query for ~30 candidate pairs on a CPU: 30× the rest of the
+  pipeline. Knobs: `RETRIEVAL_CANDIDATES` (fewer pairs), `MAX_CHUNK_CHARS` (shorter pairs),
+  the ONNX backend of the ranker, or a GPU.
+- Two questions were missed by every configuration (q03 Raft membership changes, q04 Paxos
+  prepare phase): the top results were on-topic chunks from the Raft / Paxos *PDFs and web
+  pages*, which outranked the labelled KB section. That is a limitation of the labels (only one
+  relevant unit listed) more than of retrieval; the eval file is where to fix it.
+- The corpus is small, so absolute numbers are optimistic. The *ordering* of configurations is
+  the result that generalises.
+
+### Semantic vs fixed chunking, side by side (`make compare-chunking`)
+
+`knowledge_base/01-raft.md` (6 sections, 2.5k chars): fixed 256-token windows → 6 chunks of
+233–658 chars, cut by budget (chunk [2] ends mid-argument in "Leader election"). Semantic
+(p90) → 10 chunks of 67–567 chars, cut at topic shifts: the intro splits into "what Raft is"
+and "one leader at a time; all writes go through the leader", and the election section
+splits between the timeout mechanism and the vote-granting rule.
+`raft_algorithm.pdf` page 2 (3.4k chars): fixed → 4 chunks of 467–1184 chars, boundaries at
+arbitrary sentences with 32 tokens of duplicated overlap; semantic → 4 chunks of 284–1575
+chars: term start / election mechanics / split vote → log replication. Same count, different
+boundaries, no duplication.
+
+### Why it is built this way
+
+- **Two retrievers because they fail differently.** BM25 needs the query's words to appear
+  ("hinted handoff" → exact); dense embeddings match paraphrases ("who is allowed to become
+  leader" → "vote only if the candidate's log is at least as up to date"). Fusing rank lists
+  with RRF needs no score calibration between the two, which is why it is the standard first
+  choice.
+- **Rank fusion, then rerank.** Cheap retrievers over-fetch (20 + 20), fusion dedupes and
+  orders, the expensive cross-encoder only sees ~30 candidates instead of 317 chunks.
+- **Haystack for the graph.** Each stage is a component with typed inputs/outputs; the
+  pipeline object can be printed, drawn and inspected (`include_outputs_from` gives every
+  stage's output, which is what `stage_counts` and the trace use).
+- **Local embeddings by default** (D16): retrieval evals must be reproducible and free.
+- **One filter grammar for both legs** (D17): a Planner-emitted filter reaches BM25 and
+  Chroma identically.
+
+### Trade-offs to own in an interview
+
+- In-memory BM25 is rebuilt at startup (O(N)) and is per process: two API replicas would
+  each hold a copy. Past ~100k chunks: OpenSearch behind the same interface.
+- Dual writes (Chroma, then BM25) are not atomic; a restart heals drift.
+- The cross-encoder dominates latency; batch size and candidate count are the levers.
+- bge-small (384 dims) is a small model; on harder corpora a larger bi-encoder or API
+  embeddings would lift the dense leg.
+- RRF's k=60 is a convention, not tuned; the DocumentJoiner also supports weighting the legs.
+
+### 5 likely interview questions
+
+**Q1. Walk me through reciprocal rank fusion. Why rank, not score?**
+Each retriever returns a ranked list. Every item gets `Σ 1/(k + rank_i)` over the lists it
+appears in (k=60). Items ranked well by both lists accumulate the most; an item only one
+retriever found still gets a vote. BM25 scores and cosine similarities live on different
+scales, so summing or averaging scores needs calibration and breaks when one leg returns
+nothing; ranks are scale-free. k flattens the curve so rank 1 vs rank 3 is not a landslide.
+It is 10 lines (`mara/retrieval/rrf.py`) and my test checks it orders identically to
+Haystack's implementation.
+
+**Q2. Why a cross-encoder reranker if you already have embeddings?**
+A bi-encoder embeds query and passage *independently* and compares vectors: fast, indexable,
+but it cannot model interactions between specific query terms and passage terms. A
+cross-encoder feeds `[query, passage]` through one transformer and outputs a relevance score,
+attending across both: far more accurate, but O(candidates) forward passes per query, so it
+can only run on a short list. The pattern is retrieve-cheap-then-rerank-expensive. In my eval
+it raised MRR from 0.79 to 0.87 at a cost of ~1.7 s on CPU.
+
+**Q3. How do metadata filters interact with vector search?**
+Chroma applies the `where` filter during the HNSW search (pre-filtering with candidate
+expansion), so `top_k` is filled with matching items, not filtered afterwards (post-filtering
+can return fewer than k or nothing). I keep tags as boolean flags and dates as ints so both
+Chroma and the in-memory BM25 store can evaluate the same filter; `MetadataFilter` is built
+once by the Planner and pushed to both retrievers.
+
+**Q4. What is BM25 and why did BM25L matter?**
+BM25 scores a document by summing, per query term, IDF × a saturating term-frequency term
+normalised by document length. Textbook Okapi IDF is `log((N − n + 0.5)/(n + 0.5))`, which is
+≤ 0 when a term appears in at least half the documents; on a small or filtered corpus that
+zeroed every score in a test. BM25L / BM25Plus use a strictly positive IDF and add a small
+constant so long documents are not over-penalised.
+
+**Q5. How do you keep the keyword index and the vector index consistent?**
+Chroma is the source of truth. Ingestion writes Chroma first, then the BM25 index; deletes
+propagate the same way. The BM25 index is rebuilt from Chroma on every startup, so any drift
+from a crash between the two writes lasts until the next restart. For strict consistency I
+would write both under one transactional outbox or move BM25 into the same engine
+(OpenSearch does both keyword and vectors).
+
+### 3 questions for you to answer before "next"
+
+1. Two retrievers return lists A = [x, y, z] and B = [y, w]. Compute the RRF scores with k=60
+   and give the fused order. Now put w at the top of B: does it beat x?
+2. The reranker takes 1.8 s for 30 candidates. You are asked to get under 500 ms without a
+   GPU. Name three changes, and what each one costs in recall.
+3. A user filters by `tags: ["raft"]` and `source_types: ["web"]`. Trace the filter from the
+   request body to the Chroma `where` clause and to the in-memory BM25 store.

@@ -27,11 +27,20 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.4-mini"
     openai_embedding_model: str = "text-embedding-3-small"
 
-    # Embedding vector size. Both gemini-embedding-001 (default 3072) and text-embedding-3-*
-    # support truncation via Matryoshka representation; 768 is 4x cheaper to store and
-    # search than 3072 with a small quality loss. Changing it requires re-ingesting.
+    # --- Embeddings: local by default so ingestion + search need no key and no rate limit ---
+    embedding_provider: Literal["local", "gemini", "openai"] = "local"
+    local_embedding_model: str = "BAAI/bge-small-en-v1.5"  # 33M params, 384 dims, CPU-friendly
+    # API providers only. Both gemini-embedding-001 (native 3072) and text-embedding-3-*
+    # support Matryoshka truncation; 768 is 4x cheaper to store/search with a small quality
+    # loss. Changing it (or the model) requires re-ingesting: the store refuses mismatches.
     embedding_dimensions: int | None = 768
     embedding_batch_size: int = 100  # Gemini's per-request cap is 100 texts
+
+    # --- Retrieval (Phase 3) ---
+    reranker: Literal["cross-encoder", "none"] = "cross-encoder"
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # 22M params, ~90 MB
+    retrieval_candidates: int = 20  # per retriever, before rank fusion
+    retrieval_top_k: int = 8  # after fusion (+ reranking)
 
     # --- Resilience: every LLM call goes through rate limiter + retry ---
     llm_requests_per_minute: int = 10  # Gemini free tier is ~10 RPM for flash models
@@ -65,6 +74,8 @@ class Settings(BaseSettings):
     chroma_host: str = "localhost"
     chroma_port: int = 8000
     chroma_collection: str = "mara_chunks"
+    # Set to a directory to use an embedded on-disk Chroma instead of the server (no Docker).
+    chroma_persist_path: str | None = None
 
 
 @lru_cache

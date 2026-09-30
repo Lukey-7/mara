@@ -118,8 +118,8 @@ async def list_documents(
 
 
 @router.delete("/documents/{doc_id}")
-async def delete_document(doc_id: str, store: Store) -> dict:
-    deleted = await store.delete_document(doc_id)
+async def delete_document(doc_id: str, pipeline: Pipeline) -> dict:
+    deleted = await pipeline.delete_document(doc_id)  # Chroma + secondary (BM25) index
     if not deleted:
         raise HTTPException(404, "document not found")
     return {"doc_id": doc_id, "deleted_chunks": deleted}

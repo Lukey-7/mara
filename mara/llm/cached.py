@@ -22,6 +22,7 @@ class CachedLLM:
     ) -> None:
         self.inner = inner
         self.name, self.model, self.embedding_model = inner.name, inner.model, inner.embedding_model
+        self.embedding_provider = inner.embedding_provider
         self.embedding_dimensions = inner.embedding_dimensions
         self._cache = cache
         self._llm_ttl, self._emb_ttl, self._version = llm_ttl_s, embedding_ttl_s, key_version
@@ -60,7 +61,7 @@ class CachedLLM:
             make_cache_key(
                 self._version,
                 "emb",
-                self.name,
+                self.embedding_provider,
                 self.embedding_model,
                 text=t,
                 kind=kind,

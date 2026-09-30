@@ -26,6 +26,8 @@ class EmbeddingMismatchError(RuntimeError):
 
 
 def make_chroma_client(settings: Settings) -> ClientAPI:
+    if settings.chroma_persist_path:
+        return chromadb.PersistentClient(path=settings.chroma_persist_path)
     return chromadb.HttpClient(host=settings.chroma_host, port=settings.chroma_port)
 
 

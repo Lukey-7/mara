@@ -84,18 +84,20 @@ class ResilientLLM:
         max_retries: int,
         base_delay: float,
         max_delay: float,
-        embedding_limiter: AsyncRateLimiter | None = None,  # providers limit these separately
+        embedding_limiter: AsyncRateLimiter | None = None,  # None = unlimited (local model)
     ) -> None:
         self.inner = inner
         self.name, self.model, self.embedding_model = inner.name, inner.model, inner.embedding_model
+        self.embedding_provider = inner.embedding_provider
         self.embedding_dimensions = inner.embedding_dimensions
         self._limiter = limiter
-        self._embedding_limiter = embedding_limiter or limiter
+        self._embedding_limiter = embedding_limiter
         self._retry = dict(max_retries=max_retries, base_delay=base_delay, max_delay=max_delay)
 
-    async def _call[T](self, fn: Callable[[], Awaitable[T]], limiter: AsyncRateLimiter) -> T:
+    async def _call[T](self, fn: Callable[[], Awaitable[T]], limiter: AsyncRateLimiter | None) -> T:
         async def attempt() -> T:
-            await limiter.acquire()
+            if limiter is not None:
+                await limiter.acquire()
             return await fn()
 
         return await retry_async(attempt, **self._retry)
