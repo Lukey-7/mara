@@ -612,3 +612,124 @@ one big prompt), a smaller model for planner/summarizer, fewer chunks per sub-qu
    bearing, and what would a score of 1.0 on a nonsense answer tell you?
 3. Which of the reported numbers would you put on a resume, and how would you phrase them
    so they cannot be called invented?
+
+---
+
+## Phase 6 — UI + polish
+
+### What exists now
+
+```
+mara/static/index.html     the whole UI: one file, plain HTML + JS, no build step
+mara/api/ui.py             GET / serves it
+mara/api/rate_limit.py     per-client fixed-window limiter in Redis, POST routes only
+mara/core/cache.py         redis_cached: the generic cache function decorator
+mara/agents/web_search.py  CachedWebSearch uses that decorator
+scripts/demo.py            make demo: ingest sample corpus, run one question, print trace
+docs/ARCHITECTURE.md       one query end to end, file and function at each step
+docs/INTERVIEW.md          resume map, 3-minute script, 15 questions, whiteboard kit
+.github/workflows/ci.yml   ruff check + ruff format --check + pytest, no keys, no models
+```
+
+### How the UI works
+
+```
+page load      GET /health      -> chips: LLM key present? corpus size, reranker, web search
+               GET /research    -> recent runs list
+"Research"     POST /research   -> 202 {job_id}
+               new EventSource("/research/{id}/events")
+                 event: step    -> append "planner: 3 sub-questions ..." to the live list
+                 event: done    -> close stream, GET /research/{id}, render
+render         answer: tiny markdown renderer; [n] becomes a link that highlights source n
+               sources: title, page/section, the verified quote
+               trace: plan + evidence counts, critic summary, per-step latency/calls/tokens
+"Search only"  POST /search     -> ranked chunks with scores; works with no LLM key
+```
+
+### Why it is built this way
+
+- **No build step.** One HTML file with inline CSS and JS is the smallest thing that shows
+  the system working: no node, no bundler, nothing to break before a demo. The cost is no
+  components and no type checking; fine at 250 lines, wrong at 2,500.
+- **SSE, not WebSockets.** Progress flows one way (server to browser). `EventSource` is
+  built into browsers, reconnects by itself and sends `Last-Event-ID`, and the server side is
+  a plain streaming HTTP response. WebSockets would add a protocol upgrade and a connection
+  manager for a channel we never write to.
+- **The UI reads the same endpoints as the evals.** Everything it shows comes from
+  `GET /research/{id}`, so the trace in the browser is exactly what is archived on disk.
+- **Rate limiting in Redis, in front of the expensive routes only.** A research run costs
+  LLM calls; polling and the SSE stream cost almost nothing, so only POSTs are counted.
+- **CI needs nothing external.** Fake LLM, fake embeddings, fakeredis, embedded Chroma: the
+  suite runs in about 15 seconds on a laptop and the same way on a clean Linux runner.
+
+### Two bugs that only CI found (worth telling in an interview)
+
+1. **Hard links vs NLTK.** On Linux, `uv` installs packages as hard links into its cache.
+   NLTK 3.10 refuses to open data files with more than one hard link (a guard against
+   link-following attacks), and LlamaIndex bundles its sentence-tokenizer data inside the
+   wheel. Result: semantic chunking raised `PermissionError` on the CI runner and worked on
+   Windows. Fix: `link-mode = "copy"` in `[tool.uv]`. Lesson: "works on my machine" included
+   the package installer's behaviour.
+2. **The formatter also formats Markdown.** `ruff format --check` covers Python code blocks
+   inside `.md` files, so a doc commit failed CI. Lesson: run the same commands CI runs
+   before pushing, on every commit, not only code commits.
+
+### Trade-offs to own in an interview
+
+- The markdown renderer is 15 lines and handles headings, bullets, bold, code and citations
+  only. HTML is escaped first, so model output cannot inject markup.
+- SSE here is implemented by polling the job store every 300 ms per connected client.
+  Simple and store-agnostic; Redis pub/sub would remove the polling at the cost of a second
+  code path for the in-memory store.
+- The fixed-window limiter allows up to twice the limit across a window boundary, and it
+  identifies clients by IP, which is wrong behind a shared proxy. An API key per client is
+  the fix.
+- CI was red from Phase 2 until Phase 6 because it was only checked after Phase 1.
+
+### 5 likely interview questions
+
+**Q1. Why server-sent events rather than WebSockets or polling?**
+The data flows one way and is a sequence of small text events, which is exactly what SSE is
+for: a long-lived HTTP response with `text/event-stream`, automatic reconnection and
+resumption through `Last-Event-ID`, and it passes through ordinary HTTP infrastructure.
+WebSockets are for two-way, low-latency traffic. Client polling would work but wastes
+requests and delays updates; I do keep a polling fallback in the page for when the stream
+drops.
+
+**Q2. How does the rate limiter work and what are its weaknesses?**
+One Redis key per client per minute: `INCR`, and on the first increment `EXPIRE` it for the
+window. Above the limit the API returns 429 with `Retry-After`. It is atomic and shared by
+every API replica. Weaknesses: a burst at a window boundary can reach twice the limit
+(a sliding-window log or token bucket in Lua fixes that), client identity is the IP, and if
+Redis is down it fails open by design.
+
+**Q3. How do you keep model output from breaking the page?**
+The answer is untrusted text. The renderer escapes HTML before applying any formatting, and
+only then turns a small, fixed set of patterns (headings, bullets, bold, code, `[n]`) into
+tags. Citation links are generated from digits only. Nothing from the model is ever
+inserted as raw HTML.
+
+**Q4. What does your CI prove, and what does it not?**
+It proves the deterministic shell: orchestration order, loop cap, timeouts, degradation,
+quote verification, citation checks, caching, retries, filters, ingestion idempotency and
+real Haystack pipelines with fake embeddings, on Linux. It does not prove model quality,
+the live provider adapters, a real Redis server or the Docker image. Those need a key and
+running services, and the README lists them as unverified.
+
+**Q5. Tell me about a bug that was hard to find.**
+Semantic chunking passed locally and failed in CI with a `PermissionError` from NLTK. The
+traceback pointed at a security check refusing a "multiply-linked file". The file was
+tokenizer data shipped inside the LlamaIndex wheel, and the extra link came from the package
+installer hard-linking files out of its cache on Linux. Two independent, reasonable
+behaviours combined into a failure. The fix was one config line; finding it meant reading
+the traceback literally instead of suspecting my own code.
+
+### 3 questions for you to answer
+
+1. A user opens the page while a job is half finished and the connection drops. Trace what
+   the browser and the server each do so that no step is shown twice or lost.
+2. Two API replicas sit behind a load balancer. Which of these still work correctly without
+   changes, and which do not: the LLM cache, the API rate limiter, the outbound LLM rate
+   limiter, research jobs, the BM25 index?
+3. Which three claims about this project can you not make yet, and what exactly would you
+   run to be able to make them?

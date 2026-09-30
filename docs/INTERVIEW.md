@@ -240,6 +240,7 @@ Five functions to write from memory. Each is under 25 lines and matches the repo
 ```python
 from collections import defaultdict
 
+
 def reciprocal_rank_fusion(rankings: list[list[str]], k: int = 60) -> list[tuple[str, float]]:
     """rankings: one list of ids per retriever, best first."""
     scores: dict[str, float] = defaultdict(float)
@@ -256,7 +257,7 @@ Say: ranks not scores (scale-free); k=60 damps the head; ties broken by id for d
 ```python
 async def run(self, state: ResearchState) -> ResearchState:
     state = await self._step(self.planner, state)
-    if not state.plan:                                    # planner failed: degrade
+    if not state.plan:  # planner failed: degrade
         state.plan = fallback_plan(state)
     while True:
         state = await self._step(self.researcher, state)  # parallel per sub-question
@@ -265,12 +266,13 @@ async def run(self, state: ResearchState) -> ResearchState:
         c = state.critique
         if c and c.needs_more_research and state.loop < state.options.max_loops:
             state.loop += 1
-            state.plan.extend(c.new_sub_questions)         # only these are researched next
+            state.plan.extend(c.new_sub_questions)  # only these are researched next
             continue
         break
     state = await self._step(self.writer, state)
     state.status = "done" if state.answer else "failed"
     return state
+
 
 async def _step(self, agent, state):
     step = AgentStep(agent=agent.name, loop=state.loop, started_at=utc_now())
@@ -292,15 +294,19 @@ def redis_cached(cache: RedisCache, namespace: str, ttl_s: int, version: str = "
     def decorator(fn):
         @functools.wraps(fn)
         async def wrapper(*args, **kwargs):
-            key = make_cache_key(version, namespace, "fn", fn.__qualname__,
-                                 args=args, kwargs=kwargs)
-            if (raw := await cache.get(key)) is not None:       # hit
+            key = make_cache_key(
+                version, namespace, "fn", fn.__qualname__, args=args, kwargs=kwargs
+            )
+            if (raw := await cache.get(key)) is not None:  # hit
                 return json.loads(raw)
-            result = await fn(*args, **kwargs)                   # miss: call through
+            result = await fn(*args, **kwargs)  # miss: call through
             await cache.set(key, json.dumps(result, default=str).encode(), ttl_s)
             return result
+
         return wrapper
+
     return decorator
+
 
 def make_cache_key(version, namespace, provider, model, **parts) -> str:
     canonical = json.dumps(parts, sort_keys=True, separators=(",", ":"), default=str)
@@ -317,9 +323,11 @@ does not matter; TTL; failures are not cached; `RedisCache.get/set` swallow Redi
 ```python
 _WS = re.compile(r"\s+")
 
+
 def verify_quote(quote: str, chunk_text: str) -> bool:
     q = _WS.sub(" ", quote).strip()
     return len(q) >= 10 and q in _WS.sub(" ", chunk_text)
+
 
 def keep_verified(notes, chunks_by_id):
     kept, dropped = [], 0
@@ -346,7 +354,7 @@ def build_where(f: MetadataFilter | None) -> dict | None:
         conds.append({"source_type": {"$in": list(f.source_types)}})
     if f.doc_ids:
         conds.append({"doc_id": {"$in": list(f.doc_ids)}})
-    if f.tags:                                             # any-of
+    if f.tags:  # any-of
         tags = [{f"tag:{t.strip().lower()}": {"$eq": True}} for t in f.tags]
         conds.append(tags[0] if len(tags) == 1 else {"$or": tags})
     if f.date_from:

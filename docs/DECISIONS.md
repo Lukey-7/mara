@@ -269,3 +269,50 @@ only), `DuckDuckGoWebSearch` (free, no key, via `ddgs`; rate-limited) and `Tavil
 (API key). The Researcher fetches each result, cleans it with trafilatura and ingests it
 through the normal pipeline (tagged `web-search`), so web evidence is chunked, embedded and
 cited exactly like everything else.
+
+## D26. UI: one HTML file, server-sent events (Phase 6)
+
+`mara/static/index.html` is the entire front end: inline CSS and JS, no framework, no build
+step, served by `mara/api/ui.py`. Progress uses `EventSource` on
+`GET /research/{id}/events`; the final state comes from `GET /research/{id}`. SSE over
+WebSockets because the channel is one-way and SSE reconnects and resumes by itself. Model
+output is HTML-escaped before the 15-line markdown renderer touches it. Trade-off: no
+components or type checking, acceptable at this size.
+
+## D27. Two cache shapes: a decorator object and a decorator function (Phase 6)
+
+`CachedLLM` (Phase 1) is the Decorator *pattern*: an object wrapping an `LLMProvider`, with
+per-text keys for embeddings and hit counters for the trace. `redis_cached` in
+`mara/core/cache.py` is a Python *function decorator* for any async function with
+JSON-serialisable results; `CachedWebSearch` uses it so a repeated query does not hit the
+rate-limited search API again. Both build keys with `make_cache_key` and both fail open.
+
+## D28. Per-client API rate limiting: fixed window in Redis (Phase 6)
+
+`mara/api/rate_limit.py`: `INCR` a key per (client IP, minute), `EXPIRE` on first use,
+429 with `Retry-After` above the limit, applied to POST `/research` and `/search` only.
+Chosen over the in-process token bucket used for outbound LLM calls because the counter must
+be shared by every API replica. Known weaknesses: up to 2x the limit across a window
+boundary, identity by IP, fail-open when Redis is down.
+
+## D29. `Reranker` Protocol (Phase 6)
+
+The pipeline's last stage is typed as `Reranker` (`mara/retrieval/components.py`): anything
+with `run(query, documents, top_k)`. Haystack's cross-encoder ranker and our
+`PassthroughRanker` both satisfy it structurally, so swapping rerankers is a factory change.
+
+## D30. Install mode and formatter scope, learned from CI (Phase 6)
+
+`[tool.uv] link-mode = "copy"`: on Linux uv hard-links packages from its cache, NLTK 3.10
+refuses to open multiply-linked data files, and LlamaIndex ships its tokenizer data inside
+the wheel, so semantic chunking failed on the CI runner only. Also: `ruff format --check`
+covers Python code blocks in Markdown, so docs must go through the formatter too. CI was red
+from Phase 2 to Phase 6 because it was not checked after each push; it is now part of the
+definition of done for every commit.
+
+## D31. Local-first: no Docker required (Phase 6)
+
+The supported way to run MARA is local: `make run-local` uses an embedded on-disk Chroma
+(`CHROMA_PERSIST_PATH`), local sentence-transformers models, and the in-memory job store when
+Redis is absent. `Dockerfile` and `docker-compose.yml` are kept as optional deliverables but
+have never been built or run; the README and `docs/INTERVIEW.md` say so.
