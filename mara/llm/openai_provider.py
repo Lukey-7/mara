@@ -6,6 +6,7 @@ import openai
 from pydantic import BaseModel
 
 from mara.llm.base import EmbedKind, LLMError, LLMResponse, RetryableLLMError
+from mara.llm.schema_utils import inline_refs
 
 RETRYABLE_ERRORS = (
     openai.RateLimitError,
@@ -62,7 +63,7 @@ class OpenAIProvider:
                 "type": "json_schema",
                 "json_schema": {
                     "name": json_schema.__name__,
-                    "schema": json_schema.model_json_schema(),
+                    "schema": inline_refs(json_schema.model_json_schema()),
                     # strict mode demands every field be required + no extra keys; we validate
                     # with Pydantic ourselves, so non-strict keeps schemas simple.
                     "strict": False,

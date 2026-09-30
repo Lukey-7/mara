@@ -204,3 +204,68 @@ is omitted when a chunk has none.
 the server container: no Docker needed for local development, tests and evals. chroma-haystack
 only implements `run_async` for remote clients, so `ChromaDenseRetriever` wraps it and runs
 the sync method in a thread when embedded.
+
+## D19. Orchestration is one plain-Python function over an explicit state object (Phase 4)
+
+`mara/agents/orchestrator.py::Orchestrator.run` is ~30 lines: Planner → [Researcher →
+Summarizer → Critic] × (1 + ≤ `max_loops`) → Writer. `ResearchState` (Pydantic) carries
+everything: plan, evidence per sub-question, verified notes, critique, sources, answer,
+warnings and the trace. Each agent is `run(state, step) -> state`. No LangGraph / CrewAI /
+AutoGen: the control flow must be whiteboard-able and every decision (parallel research,
+the single loop, timeouts, degradation) visible in one place. What we give up: built-in
+checkpointing, graph visualisation and human-in-the-loop hooks; the trace + job store cover
+the first, the SSE stream the last.
+
+## D20. Structured output: provider JSON mode + Pydantic validation + one retry (Phase 4)
+
+Every LLM-facing agent has a Pydantic output model. The provider is asked for JSON matching
+its schema (Gemini `response_json_schema`, OpenAI `response_format`), the reply is validated
+with `model_validate_json`, and on failure the call is repeated once with the validation
+error quoted back. Nested `$ref`s are inlined (`mara/llm/schema_utils.py`) because provider
+support for references is uneven. LLM-facing models use only simple JSON types; dates are
+strings converted in code.
+
+## D21. Evidence must be quotable, and code checks it (Phase 4)
+
+The Summarizer's notes are `{claim, supporting_quote, chunk_id}`; `verify_quote` requires
+the quote to be a substring of the chunk (verbatim modulo whitespace, case-sensitive) and
+drops the note otherwise. The Writer only ever sees verified notes, and its citation numbers
+are assigned by code from those notes before the prompt is built; after generation, citations
+to unknown numbers are stripped and `citation_coverage` (share of factual sentences with a
+citation) is recorded. So a hallucinated fact cannot acquire a citation: it would need a
+verbatim quote that does not exist. Cost: the model sometimes fails to copy a quote exactly
+and a true claim is dropped; the drop count is in the trace so this is measurable.
+
+## D22. The Critic can trigger at most one extra loop, and code decides coverage (Phase 4)
+
+The Critic proposes up to 3 new sub-questions; the orchestrator loops only while
+`state.loop < max_loops` (default 1). Coverage is computed in code (a sub-question is covered
+iff it has verified notes); the model's job is judging *quality* of coverage, conflicts, and
+proposing better queries. A hard cap rather than "loop until satisfied" bounds cost and
+latency and makes the run reproducible.
+
+## D23. Graceful degradation per step (Phase 4)
+
+Each agent runs under `asyncio.wait_for(timeout)`. Planner failure → the question becomes the
+single sub-question; a sub-question's retrieval failure → empty evidence + warning; web search
+failure → warning, internal corpus only; Summarizer/Critic failure → the run continues with
+what it has; only Writer failure marks the job failed. Warnings are handed to the Writer so
+the answer states its limitations.
+
+## D24. Jobs: Redis for live state, JSON files for history (Phase 4)
+
+`POST /research` returns a job id at once; the run is an `asyncio.Task` in the API process.
+State and an append-only event list live in Redis (`RedisJobStore`, TTL) or in memory when
+Redis is down (`MemoryJobStore`), and each finished run is archived as
+`data/traces/<job_id>.json`. `GET /research/{id}/events` is server-sent events implemented by
+polling the event list, so it works with either store and resumes from `Last-Event-ID`.
+Trade-off: in-process tasks die with the process; a queue (Celery/RQ/Arq) is the upgrade when
+runs must survive restarts or scale across workers.
+
+## D25. Web search: DuckDuckGo by default-available, Tavily by key, no-op by default (Phase 4)
+
+`WebSearchProvider` has three implementations: `NoopWebSearch` (default: the internal corpus
+only), `DuckDuckGoWebSearch` (free, no key, via `ddgs`; rate-limited) and `TavilyWebSearch`
+(API key). The Researcher fetches each result, cleans it with trafilatura and ingests it
+through the normal pipeline (tagged `web-search`), so web evidence is chunked, embedded and
+cited exactly like everything else.

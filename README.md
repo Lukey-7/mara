@@ -5,8 +5,8 @@ hybrid search (BM25 + dense + reranking) over PDFs, web pages and an internal kn
 **summarizes** it into verifiable evidence notes, **checks** coverage, and **writes** a
 citation-backed answer. Every run produces a trace of what each agent did.
 
-> Status: **Phase 3 of 6** (skeleton, ingestion, hybrid retrieval). Agents, answer evals and
-> UI follow. Numbers in this README come only from `eval/`.
+> Status: **Phase 5 of 6** (skeleton, ingestion, hybrid retrieval, agents, answer-quality
+> eval harness). The UI follows. Numbers in this README come only from `eval/`.
 
 ## Stack
 
@@ -99,6 +99,51 @@ Run without Docker at all (embedded Chroma, local models):
 make run-local
 ```
 
+## Research runs (the agents)
+
+```
+Planner → Researcher (parallel, per sub-question) → Summarizer → Critic ─┐ (≤1 loop)
+                                                        └─────────────────┘ → Writer
+```
+
+| Agent | Job | Guarantee enforced in code |
+|---|---|---|
+| Planner | question → 2–5 sub-questions, each with sources (`kb`/`pdf`/`web`) + filters | ids renumbered, sources clamped to what the request allows |
+| Researcher | hybrid retrieval per sub-question; optional web search → fetch → clean → ingest | failures become warnings, never abort |
+| Summarizer | chunks → notes `{claim, supporting_quote, chunk_id}` | quote must be a verbatim substring of the chunk or the note is dropped |
+| Critic | gaps, conflicts, up to 3 new sub-questions | coverage computed from verified notes; at most `max_loops` extra rounds |
+| Writer | numbered sources → markdown answer with `[n]` citations | citations to unknown sources stripped; coverage recorded |
+
+```bash
+curl -X POST localhost:8080/research -H 'content-type: application/json' \
+  -d '{"question": "How does Raft elect a leader, and how does that differ from Paxos?"}'
+# → {"job_id": "...", "status": "pending"}
+curl localhost:8080/research/<job_id>            # status, answer, sources, evidence, trace
+curl -N localhost:8080/research/<job_id>/events  # SSE: one event per agent step
+```
+
+Every run records a trace (per agent: input summary, output summary, latency, LLM calls,
+tokens, cache hits, errors) and is archived to `data/traces/<job_id>.json`. Needs an LLM key
+(`GEMINI_API_KEY` or `OPENAI_API_KEY`); set `WEB_SEARCH_PROVIDER=duckduckgo` or `tavily` to
+allow live web evidence.
+
+## Answer quality eval
+
+`eval/answer_eval.json` holds 15 research questions (one deliberately unanswerable).
+`eval/run_answer_eval.py` runs them through the API and reports, per answer:
+
+- **citation coverage**: share of factual sentences carrying a `[n]` citation;
+- **citation validity**: the cited source's quote occurs verbatim in the cited chunk
+  (re-checked against the evidence);
+- **faithfulness** (`--judge`): LLM-as-judge that sees only the answer and the cited
+  excerpts, and classifies each sentence as supported / partially / unsupported;
+- plus notes dropped by the quote check, loops, gaps, whether the answer admits a gap, LLM
+  calls, tokens and latency.
+
+**Results: not yet run.** The eval needs an LLM key, which this build environment did not
+have. Run it with `uv run python eval/run_answer_eval.py --judge` against a running API and
+paste the table here; until then this README shows no answer-quality numbers.
+
 ## Layout
 
 ```
@@ -107,7 +152,7 @@ mara/llm        LLMProvider protocol, Gemini/OpenAI adapters, retry+rate-limit, 
 mara/ingest     LlamaIndex loaders (PDF / HTML / markdown), semantic + fixed chunkers, pipeline
 mara/api        FastAPI app + ingestion routes
 mara/retrieval  Haystack pipelines: BM25 + dense → RRF → cross-encoder; own rrf.py; BM25 index
-mara/agents     (phase 4) Planner, Researcher, Summarizer, Critic, Writer + orchestrator
+mara/agents     Planner, Researcher, Summarizer, Critic, Writer, orchestrator, jobs, web search
 knowledge_base/ internal KB: markdown notes with frontmatter (title, tags, published_date)
 sample_corpus/  public-domain-ish PDFs + URL list for demos and evals
 prompts/        one prompt file per agent

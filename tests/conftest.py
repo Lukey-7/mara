@@ -32,6 +32,7 @@ def make_client(monkeypatch, tmp_path) -> Callable[..., TestClient]:
         overrides.setdefault("chroma_persist_path", str(tmp_path / "chroma"))
         overrides.setdefault("chroma_collection", f"t_{uuid4().hex[:8]}")
         overrides.setdefault("knowledge_base_dir", str(tmp_path / "kb"))
+        overrides.setdefault("trace_dir", str(tmp_path / "traces"))
         return TestClient(main.create_app(Settings(_env_file=None, **overrides)))
 
     return make

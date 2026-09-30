@@ -36,6 +36,18 @@ class Settings(BaseSettings):
     embedding_dimensions: int | None = 768
     embedding_batch_size: int = 100  # Gemini's per-request cap is 100 texts
 
+    # --- Agents (Phase 4) ---
+    agent_temperature: float = 0.2
+    agent_timeout_s: float = 120.0  # per agent step; a timed-out step degrades, not aborts
+    research_top_k: int = 6  # chunks per sub-question handed to the summarizer
+    max_critic_loops: int = 1  # hard cap on extra research rounds
+    summarizer_max_quote_chars: int = 300
+    web_search_provider: Literal["none", "duckduckgo", "tavily"] = "none"
+    tavily_api_key: SecretStr | None = None
+    web_search_results: int = 3  # pages fetched + ingested per sub-question
+    trace_dir: str | None = "data/traces"  # JSON per finished run; None disables
+    job_ttl_s: int = 7 * 24 * 3600
+
     # --- Retrieval (Phase 3) ---
     reranker: Literal["cross-encoder", "none"] = "cross-encoder"
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # 22M params, ~90 MB

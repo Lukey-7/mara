@@ -383,3 +383,232 @@ would write both under one transactional outbox or move BM25 into the same engin
    GPU. Name three changes, and what each one costs in recall.
 3. A user filters by `tags: ["raft"]` and `source_types: ["web"]`. Trace the filter from the
    request body to the Chroma `where` clause and to the in-memory BM25 store.
+
+---
+
+## Phase 4 — Agents + orchestrator
+
+### What exists now
+
+```
+mara/agents/state.py         ResearchState + every agent schema (Plan, EvidenceNote, Critique, ...)
+mara/agents/base.py          StructuredLLM (JSON mode → Pydantic → one retry), prompt rendering
+mara/agents/planner.py       Planner: question → 2-5 sub-questions with sources/filters
+mara/agents/researcher.py    Researcher: per sub-question, concurrently: [web search → ingest] → retrieve
+mara/agents/summarizer.py    Summarizer: chunks → notes; verify_quote() drops non-verbatim quotes
+mara/agents/critic.py        Critic: coverage (code) + gaps/conflicts/new sub-questions (model)
+mara/agents/writer.py        Writer: numbered sources → cited answer; citation validation + coverage
+mara/agents/orchestrator.py  the control flow, timeouts, degradation, trace
+mara/agents/web_search.py    WebSearchProvider: Noop | DuckDuckGo (ddgs) | Tavily
+mara/agents/jobs.py          RedisJobStore / MemoryJobStore, TraceArchive (JSON per run)
+mara/agents/runner.py        ResearchService: background asyncio task per job, emits events
+mara/api/research_routes.py  POST /research, GET /research, GET /research/{id}, /events (SSE)
+prompts/planner.md, summarizer.md, critic.md, writer.md
+```
+
+### The run, end to end
+
+```
+POST /research {"question": "...", "options": {"web_search": false, "max_loops": 1}}
+  → 202 {"job_id": "..."}; ResearchService.start() → asyncio.create_task(orchestrator.run)
+
+Orchestrator.run(state)
+  planner     LLM → Plan{sub_questions[q1..qn]} (sources, tags, dates)        1 call
+  ┌─ researcher  asyncio.gather over sub-questions:                              0 calls
+  │               [web: search → fetch → trafilatura → ingest (tag web-search)]
+  │               retriever.retrieve(q, filters, top_k) → evidence[q]
+  │  summarizer  gather: LLM per sub-question → notes; verify_quote() drops     n calls
+  │  critic      LLM → gaps / conflicts / new sub-questions                     1 call
+  └─ loop once if needs_more_research and loop < max_loops (new sub-questions only)
+  writer      sources = numbered verified chunks; LLM → answer [n]; validate    1 call
+  → status done; trace[AgentStep...], warnings, citation_coverage; archived to data/traces/
+GET /research/{id}/events  → SSE: "planner: 3 sub-questions", "researcher: q1: 6 chunks", ...
+```
+
+Typical cost: 3 + n LLM calls (n = sub-questions), ~2n with one loop. At Gemini free-tier
+10 RPM the rate limiter stretches a 4-sub-question run to roughly 1-2 minutes.
+
+### Why it is built this way
+
+- **Explicit state, explicit steps.** `ResearchState` is the only memory; agents are
+  `run(state, step) -> state`. You can print the state between any two steps, replay a
+  step, or unit-test an agent with a hand-built state. (D19)
+- **Evidence is retrieval's job, not the model's.** The Researcher has no prompt. The model
+  only ever *summarises* and *judges* text that retrieval found; every claim has to be
+  backed by an exact quote, checked in code. (D21)
+- **Code owns the invariants, the model owns judgement.** Coverage, citation numbering,
+  citation validity, loop count, timeouts: code. Sub-question phrasing, claim extraction,
+  conflict detection, prose: model. (D22)
+- **One loop, hard cap.** Bounded latency and cost; a reproducible trace. (D22)
+- **Degrade, don't abort.** Each step has a timeout and a fallback; the Writer is told about
+  every warning and says so in the answer. (D23)
+- **Jobs outlive the request.** 202 + job id, Redis/in-memory state, SSE progress from an
+  append-only event list. (D24)
+
+### Trade-offs to own in an interview
+
+- Runs are in-process `asyncio.Task`s: an API restart kills them. A queue (Arq/Celery) is
+  the upgrade when that matters.
+- `verify_quote` is strict; models sometimes fail to copy exactly and a *true* claim gets
+  dropped. The drop count is in the trace, so the cost is measurable (Phase 5 eval).
+- Coverage of a sub-question is "has ≥1 verified note", which is necessary, not sufficient;
+  the Critic judges sufficiency but its gap list is advisory (it drives the loop, not the
+  numbering).
+- Web pages are ingested permanently into the corpus (tagged `web-search`); a research run
+  therefore changes the corpus. Simple and cacheable, but a wrong page pollutes later runs
+  until deleted.
+- The SSE endpoint polls the store every 300 ms instead of using Redis pub/sub: simpler,
+  works with the in-memory store, costs one small read per client per 300 ms.
+- No real LLM run happened in this environment (no API key); the flow is verified by 100
+  tests with a scripted fake LLM and real retrieval. Phase 5's eval is the first thing to
+  run with a key.
+
+### 5 likely interview questions
+
+**Q1. Why not one big prompt with the whole corpus?**
+Three reasons. Context: even a small corpus (317 chunks ≈ 150k tokens) exceeds sensible
+prompt sizes, and cost scales with it per question. Faithfulness: a single prompt cannot show
+*where* a claim came from; my design ties each claim to a verbatim quote from a retrieved
+chunk, checked in code. Debuggability: when the answer is wrong I can see which step failed:
+bad plan, bad retrieval, bad summary or bad writing, each with inputs and outputs in the
+trace. The cost is more calls (3 + n) and more moving parts.
+
+**Q2. How do you stop hallucinated citations?**
+Citations are never free text the model invents. (1) The Summarizer must return a verbatim
+quote with each claim, and `verify_quote` drops any note whose quote is not a substring of
+the chunk. (2) Source numbers are assigned by code from the surviving notes *before* the
+Writer runs, so `[3]` means one specific chunk. (3) After writing, citations to numbers that
+do not exist are stripped and logged, and `citation_coverage` records how many factual
+sentences carry a citation. A fabricated fact would need a fabricated quote that matches the
+chunk text character for character.
+
+**Q3. What happens when the web search provider is down mid-run?**
+The Researcher catches `WebSearchError` (and fetch errors per page), records a warning
+"web search failed; using the internal corpus only", and still runs retrieval over the
+internal corpus for that sub-question. The Writer receives the warnings and adds a
+limitation sentence. The job finishes as `done`, not `failed`; the trace shows the warning.
+Same pattern for timeouts: a step that exceeds `AGENT_TIMEOUT_S` records an error and the
+run continues with what it has.
+
+**Q4. How does the Critic loop terminate?**
+Two independent guards. The Critic may propose at most 3 new sub-questions and sets
+`needs_more_research`; the orchestrator loops only while `state.loop < max_loops` (default 1,
+max 2 by validation). The loop researches *only* the new sub-questions (existing evidence is
+kept), so the second round is cheaper than the first. Worst case is therefore
+Planner + 2 × (Researcher, Summarizer, Critic) + Writer, known before the run starts.
+
+**Q5. How would you scale this to many concurrent users?**
+Today: one process, jobs as asyncio tasks, in-memory BM25, Redis for cache and job state.
+Steps: (1) move jobs to a queue with worker processes; the API only enqueues and serves
+state; (2) replace the in-memory BM25 with OpenSearch (keyword + vector in one engine) or
+keep Chroma and add a shared BM25 service; (3) the LLM rate limiter becomes Redis-based so
+all workers share the quota; (4) per-tenant caches keyed on provider/model/prompt already
+exist. Latency per run is dominated by LLM calls; batching sub-question summaries into one
+call is the first cost cut.
+
+### 3 questions for you to answer before "next"
+
+1. A Summarizer note has a correct claim but its quote has one wrong character. What happens
+   to it, and where in the trace can you see that it happened? Is that the right trade-off?
+2. `max_loops=1`. The Critic proposes 3 new sub-questions in round 1 and 3 more in round 2.
+   How many times does each agent run, and which sub-questions get researched in round 2?
+3. Redis goes down after a job started. What happens to (a) the LLM cache, (b) the job's
+   status endpoint, (c) the SSE stream, (d) the archived trace?
+
+---
+
+## Phase 5 — Answer quality eval
+
+### What exists now
+
+```
+mara/agents/metrics.py     citation_validity(), answer_metrics(), judge_faithfulness()
+prompts/judge.md           LLM-as-judge prompt: grade sentences against the cited excerpts ONLY
+eval/answer_eval.json      15 research questions (one deliberately unanswerable: expect_gap)
+eval/run_answer_eval.py    drives the API, scores each finished run, prints a markdown table
+```
+
+### The three automatic checks
+
+| Check | Question it answers | How |
+|---|---|---|
+| Citation coverage | Did the writer cite what it claims? | share of factual sentences (≥25 chars, not headings) containing `[n]`; a sentence that says "No evidence was found" counts as covered |
+| Citation validity | Does `[n]` point at real evidence? | the source's excerpt must occur verbatim (modulo whitespace) in the cited chunk, re-checked against the evidence in the state; unknown numbers are counted |
+| Faithfulness (LLM-as-judge) | Are the sentences actually supported by those excerpts? | a second model call sees only the answer and the cited excerpts, never the full chunks or its own knowledge, and classifies each sentence supported / partial / unsupported |
+
+Plus operational numbers per run: sources, notes dropped by the quote check, loops, gaps,
+whether the answer admits a gap, LLM calls, tokens, latency.
+
+### Status: not yet run
+
+The eval needs an LLM key and this environment had none, so **there are no answer-quality
+numbers yet**. Everything else is in place: `make run-local`, `make ingest-sample`, then
+
+```bash
+uv run python eval/run_answer_eval.py --judge
+```
+
+prints the table to paste into the README. The metric code is unit-tested with a
+hand-built finished state (`tests/test_answer_metrics.py`). Until the eval has run, the
+README says exactly that rather than showing invented numbers.
+
+### What to expect and how to read it
+
+- Validity should be ~1.0 by construction (the Writer only sees verified sources); anything
+  lower means a source excerpt changed between summarising and writing, or a bug.
+- Coverage below 1.0 is the interesting metric: it is the share of sentences the model
+  wrote *without* pointing at evidence. The Writer prompt forbids that; the metric measures
+  how well the instruction holds.
+- Faithfulness catches the subtler failure: a cited sentence whose excerpt does not actually
+  say that. Judge scores are themselves model outputs (noisy, prompt-sensitive), so report
+  them next to the deterministic checks, never alone.
+- `notes_dropped` shows how often the Summarizer failed to copy a quote exactly: the cost of
+  the strict verbatim rule. If it is high, loosen the check (e.g. normalise quotes) or
+  shorten `SUMMARIZER_MAX_QUOTE_CHARS`.
+- a15 (throughput numbers) is designed to have no evidence; the right answer admits it.
+
+### 5 likely interview questions
+
+**Q1. How do you evaluate an answer when there is no gold answer?**
+Split the question into properties you can check without a reference. Grounding is
+checkable: did every claim cite a source, and does that source really contain the quoted
+support (coverage, validity: deterministic). Faithfulness is judgeable: does the cited text
+support the sentence (LLM-as-judge with the evidence in the prompt and nothing else).
+Completeness needs a reference or a human; I approximate it with the Critic's gap list and a
+question designed to have no answer, checking that the system says so.
+
+**Q2. Isn't LLM-as-judge circular?**
+It would be if the judge saw the same inputs and could use world knowledge. Here the judge
+sees only the answer and the excerpts behind its citations, and is told to classify
+sentences by whether the excerpt supports them, not by whether they are true. That turns it
+into an entailment check on short texts, which models do reliably. It is still a model
+output: I report it beside the deterministic metrics and keep the examples of unsupported
+sentences so a human can spot-check.
+
+**Q3. Why report a question that is designed to fail?**
+Because "I don't know" is a feature. A research assistant that answers every question is
+hallucinating on some of them. a15 asks for a number the corpus does not contain; the correct
+behaviour is a sentence starting "No evidence was found for ...", which the coverage metric
+credits and the `admits_gap` flag records.
+
+**Q4. What would you do if coverage were 0.7?**
+Look at the uncited sentences in the archived traces. Usually three kinds: connective prose
+that is not factual (fix the metric: exclude it), true facts the writer added from memory
+(fix the prompt, lower temperature, or drop them in post-processing), or facts that were in
+the evidence but the Summarizer did not extract as notes (improve summarisation or raise
+`RESEARCH_TOP_K`).
+
+**Q5. How much does a run cost and where would you cut it?**
+Cost = (3 + n) calls, roughly (planner ~1k tokens) + n × (summarizer ~3k) + critic ~2k +
+writer ~3k input tokens; the trace records exact counts per step. Cuts, in order: cache hits
+on repeated questions (already free), one summarizer call for all sub-questions (fewer calls,
+one big prompt), a smaller model for planner/summarizer, fewer chunks per sub-question.
+
+### 3 questions for you to answer before "next"
+
+1. Validity checks the excerpt against the chunk; coverage checks for a `[n]`. Construct an
+   answer with coverage 1.0 and validity 1.0 that is still wrong. Which check catches it?
+2. The judge prompt says "do not use your own knowledge". Why is that instruction load-
+   bearing, and what would a score of 1.0 on a nonsense answer tell you?
+3. Which of the reported numbers would you put on a resume, and how would you phrase them
+   so they cannot be called invented?

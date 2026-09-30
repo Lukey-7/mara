@@ -19,8 +19,12 @@ class FakeLLM:
         replies: list[str | Exception] | None = None,
         dim: int = 4,
         embedder: Callable[[str], list[float]] | None = None,
+        replies_by_schema: dict[str, list[str | Exception]] | None = None,
     ) -> None:
         self.replies = list(replies or [])
+        # Scripted per output schema name ("Plan", "SummarizerOutput", ...): each call pops
+        # the next reply for that schema; the last one repeats if the queue runs dry.
+        self.replies_by_schema = {k: list(v) for k, v in (replies_by_schema or {}).items()}
         self.dim = dim
         self.embedding_dimensions = dim
         self._embedder = embedder
@@ -39,7 +43,13 @@ class FakeLLM:
         self.generate_calls.append(
             dict(prompt=prompt, system=system, temperature=temperature, json_schema=json_schema)
         )
-        reply = self.replies.pop(0) if self.replies else f"echo: {prompt}"
+        queue = self.replies_by_schema.get(json_schema.__name__) if json_schema else None
+        if queue:
+            reply = queue.pop(0) if len(queue) > 1 else queue[0]
+        else:
+            reply = self.replies.pop(0) if self.replies else f"echo: {prompt}"
+        if callable(reply):
+            reply = reply(prompt)  # scripted replies may inspect the prompt
         if isinstance(reply, Exception):
             raise reply
         return LLMResponse(text=reply, model=self.model, input_tokens=10, output_tokens=5)

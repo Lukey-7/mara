@@ -7,6 +7,7 @@ from google.genai import errors, types
 from pydantic import BaseModel
 
 from mara.llm.base import EmbedKind, LLMError, LLMResponse, RetryableLLMError
+from mara.llm.schema_utils import inline_refs
 
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
@@ -49,7 +50,7 @@ class GeminiProvider:
         )
         if json_schema is not None:
             config.response_mime_type = "application/json"
-            config.response_json_schema = json_schema.model_json_schema()
+            config.response_json_schema = inline_refs(json_schema.model_json_schema())
 
         start = time.perf_counter()
         try:

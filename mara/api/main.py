@@ -9,8 +9,10 @@ import redis.asyncio as redis
 from fastapi import FastAPI, Request
 
 from mara import __version__
-from mara.api import ingest_routes, search_routes
-from mara.core.chunk_store import make_chroma_client
+from mara.agents.factory import build_job_store, build_orchestrator, build_research_service
+from mara.agents.jobs import TraceArchive
+from mara.api import ingest_routes, research_routes, search_routes
+from mara.core.chunk_store import ChunkStore, make_chroma_client
 from mara.core.config import Settings, get_settings
 from mara.ingest.factory import build_pipeline, build_store
 from mara.llm.factory import build_llm, llm_configuration_error
@@ -30,8 +32,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         st.settings = settings
         st.redis = redis.Redis.from_url(settings.redis_url)
         st.llm = st.store = st.pipeline = st.bm25 = st.retriever = None
+        st.research = st.jobs = st.trace_archive = None
         st.llm_error = llm_configuration_error(settings)  # generate() unavailable, embed() fine
-        st.store_error = st.retriever_error = None
+        st.store_error = st.retriever_error = st.research_error = None
         try:
             # Loads the local embedding model: blocking, so off the event loop.
             st.llm = await asyncio.to_thread(build_llm, settings, st.redis)
@@ -59,12 +62,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 st.retriever_error = f"{type(e).__name__}: {e}"
                 st.retriever = None
                 log.warning("retriever not available: %s", e)
+
+        if st.llm_error:
+            st.research_error = f"LLM not configured: {st.llm_error}"
+        elif st.retriever is None:
+            st.research_error = "retriever not available"
+        else:
+            try:
+                redis_ok = await _check_redis(st.redis) == "ok"
+                st.jobs = build_job_store(settings, st.redis, redis_ok)  # memory if Redis is down
+                orchestrator = build_orchestrator(
+                    settings, st.llm, st.retriever, st.pipeline,
+                    known_tags=lambda: _known_tags(st.store),
+                )  # fmt: skip
+                st.research = build_research_service(settings, orchestrator, st.jobs)
+                st.trace_archive = TraceArchive(settings.trace_dir) if settings.trace_dir else None
+            except Exception as e:  # noqa: BLE001
+                st.research_error = f"{type(e).__name__}: {e}"
+                log.warning("research service not available: %s", e)
         yield
+        if st.research is not None:  # let in-flight jobs finish their last step
+            await asyncio.wait_for(st.research.wait_all(), timeout=10)
         await st.redis.aclose()
 
     app = FastAPI(title="MARA", version=__version__, lifespan=lifespan)
     app.include_router(ingest_routes.router)
     app.include_router(search_routes.router)
+    app.include_router(research_routes.router)
 
     @app.get("/health")
     async def health(request: Request) -> dict:
@@ -90,6 +114,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "ready": st.store is not None,
                 **({"error": st.store_error} if st.store_error else {}),
             },
+            "research": {
+                "ready": st.research is not None,
+                "job_store": type(st.jobs).__name__ if st.jobs else None,
+                "web_search": settings.web_search_provider,
+                **({"error": st.research_error} if st.research_error else {}),
+            },
             "retriever": {
                 "ready": st.retriever is not None,
                 "reranker": settings.reranker,
@@ -107,6 +137,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok" if healthy else "degraded", "version": __version__, "checks": checks}
 
     return app
+
+
+async def _known_tags(store: ChunkStore) -> list[str]:
+    """Tags currently in the corpus, offered to the Planner as filter candidates."""
+    return sorted({t for d in await store.list_documents() for t in d.tags})
 
 
 async def _check_redis(client: redis.Redis) -> str:
