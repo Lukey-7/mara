@@ -12,7 +12,7 @@ from collections.abc import Awaitable, Callable
 
 from pydantic import BaseModel
 
-from mara.llm.base import LLMProvider, LLMResponse, RetryableLLMError
+from mara.llm.base import EmbedKind, LLMProvider, LLMResponse, RetryableLLMError
 
 log = logging.getLogger(__name__)
 
@@ -84,15 +84,18 @@ class ResilientLLM:
         max_retries: int,
         base_delay: float,
         max_delay: float,
+        embedding_limiter: AsyncRateLimiter | None = None,  # providers limit these separately
     ) -> None:
         self.inner = inner
         self.name, self.model, self.embedding_model = inner.name, inner.model, inner.embedding_model
+        self.embedding_dimensions = inner.embedding_dimensions
         self._limiter = limiter
+        self._embedding_limiter = embedding_limiter or limiter
         self._retry = dict(max_retries=max_retries, base_delay=base_delay, max_delay=max_delay)
 
-    async def _call[T](self, fn: Callable[[], Awaitable[T]]) -> T:
+    async def _call[T](self, fn: Callable[[], Awaitable[T]], limiter: AsyncRateLimiter) -> T:
         async def attempt() -> T:
-            await self._limiter.acquire()
+            await limiter.acquire()
             return await fn()
 
         return await retry_async(attempt, **self._retry)
@@ -113,8 +116,9 @@ class ResilientLLM:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 json_schema=json_schema,
-            )
+            ),
+            self._limiter,
         )
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        return await self._call(lambda: self.inner.embed(texts))
+    async def embed(self, texts: list[str], *, kind: EmbedKind = "document") -> list[list[float]]:
+        return await self._call(lambda: self.inner.embed(texts, kind=kind), self._embedding_limiter)

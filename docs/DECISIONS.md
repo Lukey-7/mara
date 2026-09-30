@@ -93,3 +93,62 @@ Exact versions in `pyproject.toml`, `uv.lock` committed, Docker image tags pinne
 (`redis:8.8.3-alpine`, `chromadb/chroma:1.5.9` matching the `chromadb` client, `uv:0.12.3`).
 LlamaIndex and Haystack change APIs between minors; a green build today should be green in a
 month. Versions were checked against PyPI / Docker Hub on 2026-09-30.
+
+## D8. Chroma access goes through our own `ChunkStore`, not LlamaIndex's `ChromaVectorStore` (Phase 2)
+
+The plan assumed `llama-index-vector-stores-chroma` would write chunks that Haystack reads.
+Inspecting `ChromaVectorStore.add` (v0.6.0) showed it serialises the *entire node* as a JSON
+string in a `_node_content` metadata field (duplicating the text), uses `collection.add`
+(not upsert, so re-ingestion raises on existing ids), and adds `_node_type`, `document_id`,
+`ref_doc_id` fields that Haystack would surface as junk metadata. Both frameworks *can* read
+it, but neither cleanly.
+
+Decision: one 150-line module, `mara/core/chunk_store.py`, owns the collection. It writes the
+plain layout `ids = chunk_id, documents = text, metadatas = Chunk.to_chroma_metadata()` and
+records the embedding model + dimensions in the collection metadata, refusing to open a
+collection built with a different embedding (`EmbeddingMismatchError`). LlamaIndex's job is
+loaders + node parsing (`PDFReader`, `SemanticSplitterNodeParser`, `SentenceSplitter`);
+Haystack (Phase 3) reads the same plain layout. The integration package was removed from
+`pyproject.toml` because we do not use it. Resume wording stays true: LlamaIndex does
+ingestion; ChromaDB is the shared store.
+
+## D9. Citable unit = PDF page / markdown section / web page (Phase 2)
+
+Chunking runs per *source unit*, never across them. A chunk therefore always has an exact
+page number or section heading, which the Writer needs for citations like "[3] Raft notes,
+Leader election". Cost: a sentence that straddles a page break is split. Accepted.
+
+## D10. Idempotent ingestion via content hashes (Phase 2)
+
+`doc_id = sha256(source_type + whitespace-normalised text of all units)[:16]`. Same bytes under
+a new filename ⇒ same id ⇒ `skipped_duplicate` (no embedding calls). `force=True` deletes
+the old chunks and re-ingests (`replaced`). `chunk_id = doc_id + "-" + sha256(doc_id, index,
+text)[:16]`, so identical splits produce identical ids and Chroma `upsert` is a no-op.
+Documents are *derived* from chunk metadata (`GET /documents` groups by `doc_id`) rather than
+kept in a second table that could drift. Fine to ~100k chunks; beyond that, a documents table.
+
+## D11. Embeddings: task types and 768 dims (Phase 2)
+
+`LLMProvider.embed(texts, kind="document" | "query")`. Gemini's embedding model is asymmetric
+(`RETRIEVAL_DOCUMENT` vs `RETRIEVAL_QUERY` task types); OpenAI's is symmetric and ignores
+`kind`. Both support Matryoshka truncation, so `EMBEDDING_DIMENSIONS=768` cuts storage and
+search cost 4× versus Gemini's native 3072 for a small quality loss. The dims and kind are part
+of the cache key. Embedding calls get their own rate limiter (`EMBEDDING_REQUESTS_PER_MINUTE`)
+because providers limit them separately from generation.
+
+## D12. Metadata encoding for filters (Phase 2)
+
+Chroma metadata is flat scalars or lists. `tags` is stored as a list (Chroma ≥1.1 supports
+`{"tags": {"$contains": "raft"}}`); `published_date` as int `YYYYMMDD` so `$gte/$lte` range
+filters work; `None` fields are omitted. `mara/core/filters.py::build_where` is the only code
+that knows the grammar (single condition bare, several wrapped in `$and`, tags any-of via
+`$or`). The same `MetadataFilter` model is what the Planner emits in Phase 4.
+
+## D13. Semantic chunks are capped (Phase 2)
+
+`SemanticSplitterNodeParser` cuts where the cosine distance between neighbouring sentence
+windows exceeds the Nth percentile *within the document*. A single-topic page therefore yields
+one giant chunk. Giant chunks hurt retrieval precision and overflow the reranker's 512-token
+window, so anything over `MAX_CHUNK_CHARS` is re-packed sentence by sentence
+(`pack_sentences`). The percentile default is 90 (LlamaIndex's default 95 produced too few
+splits on short notes).

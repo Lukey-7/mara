@@ -1,4 +1,4 @@
-.PHONY: install test lint fmt run up down logs
+.PHONY: install test lint fmt run up down logs ingest-sample compare-chunking
 
 install:        ## create .venv with all deps (incl. dev) from uv.lock
 	uv sync
@@ -25,3 +25,9 @@ down:
 
 logs:
 	docker compose logs -f api
+
+ingest-sample:  ## load knowledge_base/ + sample_corpus/ through the running API
+	uv run python scripts/ingest_sample_corpus.py
+
+compare-chunking:  ## semantic vs fixed-size chunking on one KB note (needs an API key)
+	uv run python scripts/compare_chunking.py knowledge_base/01-raft.md

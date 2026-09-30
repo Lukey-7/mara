@@ -16,6 +16,9 @@ RUN useradd --create-home --uid 1000 app
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY prompts ./prompts
+COPY knowledge_base ./knowledge_base
+COPY sample_corpus ./sample_corpus
+COPY scripts ./scripts
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 USER app
 EXPOSE 8080

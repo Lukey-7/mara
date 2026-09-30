@@ -5,7 +5,7 @@ import time
 import openai
 from pydantic import BaseModel
 
-from mara.llm.base import LLMError, LLMResponse, RetryableLLMError
+from mara.llm.base import EmbedKind, LLMError, LLMResponse, RetryableLLMError
 
 RETRYABLE_ERRORS = (
     openai.RateLimitError,
@@ -23,11 +23,13 @@ class OpenAIProvider:
         api_key: str,
         model: str,
         embedding_model: str,
+        embedding_dimensions: int | None = None,
         timeout_s: float = 60.0,
         client: openai.AsyncOpenAI | None = None,  # injectable for tests
     ) -> None:
         self.model = model
         self.embedding_model = embedding_model
+        self.embedding_dimensions = embedding_dimensions
         # max_retries=0: ResilientLLM owns retries, so they are not stacked twice.
         self._client = client or openai.AsyncOpenAI(
             api_key=api_key, timeout=timeout_s, max_retries=0
@@ -84,9 +86,13 @@ class OpenAIProvider:
             latency_ms=latency_ms,
         )
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def embed(self, texts: list[str], *, kind: EmbedKind = "document") -> list[list[float]]:
+        # OpenAI embeddings are symmetric: `kind` is intentionally unused.
+        kwargs: dict = {"model": self.embedding_model, "input": texts}
+        if self.embedding_dimensions is not None:
+            kwargs["dimensions"] = self.embedding_dimensions
         try:
-            resp = await self._client.embeddings.create(model=self.embedding_model, input=texts)
+            resp = await self._client.embeddings.create(**kwargs)
         except RETRYABLE_ERRORS as e:
             raise RetryableLLMError(f"openai: {e}") from e
         except openai.OpenAIError as e:

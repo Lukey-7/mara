@@ -6,7 +6,7 @@ from google import genai
 from google.genai import errors, types
 from pydantic import BaseModel
 
-from mara.llm.base import LLMError, LLMResponse, RetryableLLMError
+from mara.llm.base import EmbedKind, LLMError, LLMResponse, RetryableLLMError
 
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
@@ -19,11 +19,13 @@ class GeminiProvider:
         api_key: str,
         model: str,
         embedding_model: str,
+        embedding_dimensions: int | None = None,
         timeout_s: float = 60.0,
         client: genai.Client | None = None,  # injectable for tests
     ) -> None:
         self.model = model
         self.embedding_model = embedding_model
+        self.embedding_dimensions = embedding_dimensions
         # HttpOptions.timeout is in milliseconds. SDK-level retries stay off: ResilientLLM owns
         # retry policy so it is applied once, identically, for every provider.
         self._client = client or genai.Client(
@@ -66,10 +68,16 @@ class GeminiProvider:
             latency_ms=latency_ms,
         )
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def embed(self, texts: list[str], *, kind: EmbedKind = "document") -> list[list[float]]:
+        # Gemini embeddings are asymmetric: passages and queries get different task types,
+        # which measurably improves retrieval over using one type for both.
+        config = types.EmbedContentConfig(
+            task_type="RETRIEVAL_DOCUMENT" if kind == "document" else "RETRIEVAL_QUERY",
+            output_dimensionality=self.embedding_dimensions,
+        )
         try:
             resp = await self._client.aio.models.embed_content(
-                model=self.embedding_model, contents=texts
+                model=self.embedding_model, contents=texts, config=config
             )
         except errors.APIError as e:
             raise _translate(e) from e

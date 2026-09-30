@@ -8,7 +8,7 @@ from array import array
 from pydantic import BaseModel
 
 from mara.core.cache import RedisCache, make_cache_key
-from mara.llm.base import LLMProvider, LLMResponse
+from mara.llm.base import EmbedKind, LLMProvider, LLMResponse
 
 
 class CachedLLM:
@@ -22,6 +22,7 @@ class CachedLLM:
     ) -> None:
         self.inner = inner
         self.name, self.model, self.embedding_model = inner.name, inner.model, inner.embedding_model
+        self.embedding_dimensions = inner.embedding_dimensions
         self._cache = cache
         self._llm_ttl, self._emb_ttl, self._version = llm_ttl_s, embedding_ttl_s, key_version
         # Counters the trace reads (per process; the per-run numbers come from LLMResponse.cached).
@@ -53,10 +54,18 @@ class CachedLLM:
         await self._cache.set(key, resp.model_dump_json().encode(), self._llm_ttl)
         return resp
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def embed(self, texts: list[str], *, kind: EmbedKind = "document") -> list[list[float]]:
         """Per-text caching: a batch where 90 of 100 texts are cached calls the API for 10."""
         keys = [
-            make_cache_key(self._version, "emb", self.name, self.embedding_model, text=t)
+            make_cache_key(
+                self._version,
+                "emb",
+                self.name,
+                self.embedding_model,
+                text=t,
+                kind=kind,
+                dims=self.embedding_dimensions,
+            )  # fmt: skip
             for t in texts
         ]
         cached = await self._cache.get_many(keys)
@@ -66,7 +75,7 @@ class CachedLLM:
         self.embedding_hits += len(texts) - len(missing)
         self.embedding_misses += len(missing)
         if missing:
-            fresh = await self.inner.embed([texts[i] for i in missing])
+            fresh = await self.inner.embed([texts[i] for i in missing], kind=kind)
             for i, vec in zip(missing, fresh, strict=True):
                 result[i] = vec
             await self._cache.set_many(

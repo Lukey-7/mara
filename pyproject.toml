@@ -15,6 +15,11 @@ dependencies = [
     "httpx==0.28.1",
     "google-genai==2.25.0",
     "openai==3.22.1",
+    "llama-index-core==0.14.25",
+    "llama-index-readers-file==0.7.0",
+    "chromadb==1.5.9",
+    "trafilatura==2.2.0",
+    "python-multipart==0.0.32",
 ]
 
 [dependency-groups]

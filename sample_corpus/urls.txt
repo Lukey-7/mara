@@ -1,0 +1,5 @@
+https://en.wikipedia.org/wiki/Consistent_hashing
+https://en.wikipedia.org/wiki/Two-phase_commit_protocol
+https://en.wikipedia.org/wiki/Vector_clock
+https://en.wikipedia.org/wiki/Log-structured_merge-tree
+https://en.wikipedia.org/wiki/Eventual_consistency

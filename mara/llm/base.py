@@ -4,9 +4,11 @@ Agents depend only on `LLMProvider`, never on a vendor SDK. Swapping Gemini for 
 (or a fake in tests) is a config change, not a code change: the Strategy pattern.
 """
 
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
+
+EmbedKind = Literal["document", "query"]
 
 
 class LLMResponse(BaseModel):
@@ -31,6 +33,7 @@ class LLMProvider(Protocol):
     name: str  # "gemini" | "openai" | "fake"; part of every cache key
     model: str
     embedding_model: str
+    embedding_dimensions: int | None  # None = the model's native size
 
     async def generate(
         self,
@@ -45,6 +48,9 @@ class LLMProvider(Protocol):
         matching that Pydantic model (validation happens in the caller)."""
         ...
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        """Return one embedding vector per input text, in order."""
+    async def embed(self, texts: list[str], *, kind: EmbedKind = "document") -> list[list[float]]:
+        """Return one embedding vector per input text, in order.
+
+        `kind` lets asymmetric models (Gemini) embed passages and queries differently;
+        symmetric models ignore it."""
         ...

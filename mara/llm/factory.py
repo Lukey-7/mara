@@ -25,6 +25,7 @@ def build_base_provider(settings: Settings) -> LLMProvider:
             api_key=settings.gemini_api_key.get_secret_value(),
             model=settings.gemini_model,
             embedding_model=settings.gemini_embedding_model,
+            embedding_dimensions=settings.embedding_dimensions,
             timeout_s=settings.llm_timeout_s,
         )
     if settings.llm_provider == "openai":
@@ -36,6 +37,7 @@ def build_base_provider(settings: Settings) -> LLMProvider:
             api_key=settings.openai_api_key.get_secret_value(),
             model=settings.openai_model,
             embedding_model=settings.openai_embedding_model,
+            embedding_dimensions=settings.embedding_dimensions,
             timeout_s=settings.llm_timeout_s,
         )
     raise ValueError(f"unknown LLM provider: {settings.llm_provider}")
@@ -50,6 +52,7 @@ def wrap_provider(
         max_retries=settings.llm_max_retries,
         base_delay=settings.llm_backoff_base_s,
         max_delay=settings.llm_backoff_max_s,
+        embedding_limiter=AsyncRateLimiter(per_minute=settings.embedding_requests_per_minute),
     )
     if settings.cache_enabled and redis_client is not None:
         provider = CachedLLM(
