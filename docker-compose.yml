@@ -1,0 +1,44 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      CHROMA_HOST: chroma
+      CHROMA_PORT: "8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+
+  redis:
+    image: redis:8.8.3-alpine
+    # volatile-lru: under memory pressure evict only keys that have a TTL (cache entries),
+    # never TTL-less keys. appendonly keeps job status across restarts.
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru",
+              "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  chroma:
+    image: chromadb/chroma:1.5.9  # matches the chromadb Python client version
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/data
+
+volumes:
+  redis-data:
+  chroma-data:

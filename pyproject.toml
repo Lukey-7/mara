@@ -1,0 +1,45 @@
+[project]
+name = "mara"
+version = "0.1.0"
+description = "MARA: a multi-agent research assistant with hybrid retrieval and citation-backed answers"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# Exact pins on purpose: LlamaIndex / Haystack / LLM SDKs move fast and break APIs.
+# Versions verified against PyPI on 2026-09-30. New deps are added phase by phase.
+dependencies = [
+    "fastapi==0.142.1",
+    "uvicorn[standard]==0.54.0",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "redis==8.1.0",
+    "httpx==0.28.1",
+    "google-genai==2.25.0",
+    "openai==3.22.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "fakeredis==2.38.0",
+    "ruff==0.16.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mara"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "ASYNC"]
