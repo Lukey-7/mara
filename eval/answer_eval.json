@@ -1,0 +1,20 @@
+{
+  "description": "Research questions over the sample corpus. Automatic checks per answer: citation coverage (share of factual sentences with a [n]), citation validity (cited quote occurs verbatim in the cited chunk), whether the answer explicitly admits gaps, and an LLM-as-judge faithfulness score against the cited excerpts only. `expect_gap` marks questions the corpus cannot fully answer; a good answer says so.",
+  "questions": [
+    {"id": "a01", "question": "How does Raft elect a leader, and what prevents two leaders in the same term?"},
+    {"id": "a02", "question": "Compare Raft and Paxos: their roles, how a leader is chosen, and how each guarantees safety."},
+    {"id": "a03", "question": "What does the CAP theorem actually say, and what are the common misreadings of it?"},
+    {"id": "a04", "question": "When should a system choose leaderless replication, and what consistency risks does it bring?"},
+    {"id": "a05", "question": "Explain consistent hashing and why virtual nodes are used."},
+    {"id": "a06", "question": "Why is two-phase commit a blocking protocol, and how do Spanner and CockroachDB work around that?"},
+    {"id": "a07", "question": "How do vector clocks detect concurrent writes, and what problem do hybrid logical clocks solve?"},
+    {"id": "a08", "question": "Compare LSM trees and B-trees for a write-heavy workload."},
+    {"id": "a09", "question": "What are quorum reads and writes, and when does W + R > N fail to guarantee a fresh read?"},
+    {"id": "a10", "question": "How does Cassandra combine ideas from Dynamo and Bigtable?"},
+    {"id": "a11", "question": "What is TrueTime and how does Spanner use it to get external consistency?"},
+    {"id": "a12", "question": "How does eventual consistency differ from causal consistency, and which anomalies does each allow?"},
+    {"id": "a13", "question": "What are sagas and what do they give up compared to distributed transactions?"},
+    {"id": "a14", "question": "How do gossip protocols and failure detectors keep cluster membership up to date?"},
+    {"id": "a15", "question": "What throughput, in transactions per second, does Raft achieve on commodity hardware?", "expect_gap": true}
+  ]
+}
