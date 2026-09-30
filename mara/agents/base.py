@@ -2,6 +2,7 @@
 
 import json
 import re
+from functools import lru_cache
 from pathlib import Path
 from string import Template
 from typing import Any, Protocol
@@ -11,8 +12,16 @@ from pydantic import BaseModel, ValidationError
 from mara.agents.state import AgentStep, ResearchState
 from mara.llm.base import LLMProvider
 
-PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 _FENCE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.MULTILINE)
+
+
+def prompts_dir() -> Path:
+    """`prompts/` next to the working directory (repo root, /app in Docker) or, for an
+    editable install, next to the package."""
+    for candidate in (Path.cwd() / "prompts", Path(__file__).resolve().parents[2] / "prompts"):
+        if candidate.is_dir():
+            return candidate
+    raise FileNotFoundError("prompts/ directory not found")
 
 
 class AgentError(Exception):
@@ -25,8 +34,9 @@ class Agent(Protocol):
     async def run(self, state: ResearchState, step: AgentStep) -> ResearchState: ...
 
 
+@lru_cache(maxsize=16)
 def load_prompt(name: str) -> str:
-    return (PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8")
+    return (prompts_dir() / f"{name}.md").read_text(encoding="utf-8")
 
 
 def render(template: str, **variables: Any) -> str:

@@ -28,6 +28,7 @@ from mara.retrieval.components import (
     ChromaDenseRetriever,
     PassthroughRanker,
     ProviderQueryEmbedder,
+    Reranker,
 )
 
 RetrievalMode = Literal["bm25", "dense", "hybrid"]
@@ -71,7 +72,7 @@ class HaystackHybridRetriever:
         llm: LLMProvider,
         bm25: BM25Index,
         chroma_store: ChromaDocumentStore,
-        ranker_factory: Callable[[int], object] | None,  # None = no cross-encoder available
+        ranker_factory: Callable[[int], Reranker] | None,  # None = no cross-encoder available
         candidates: int = 20,
         top_k: int = 8,
         remote_chroma: bool = True,  # False = embedded on-disk Chroma (no native async)

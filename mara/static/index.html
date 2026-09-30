@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARA — research assistant</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2128; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --ok:#16a34a; --warn:#d97706; --bad:#dc2626; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:var(--ink); background:var(--bg); }
+  header { display:flex; align-items:baseline; gap:16px; padding:14px 24px; background:var(--card); border-bottom:1px solid var(--line); }
+  header h1 { font-size:18px; margin:0; } header .sub { color:var(--muted); font-size:13px; }
+  #health { margin-left:auto; font-size:13px; color:var(--muted); }
+  .chip { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); background:#fafafa; margin-left:6px; }
+  .chip.ok { border-color:var(--ok); color:var(--ok); } .chip.bad { border-color:var(--bad); color:var(--bad); }
+  main { display:grid; grid-template-columns: 380px 1fr; gap:20px; padding:20px 24px; max-width:1400px; margin:0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:20px; }
+  .card h2 { font-size:14px; margin:0 0 10px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  label { display:block; font-size:13px; color:var(--muted); margin:8px 0 4px; }
+  textarea, input[type=text], input[type=date], select { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; font:inherit; }
+  textarea { min-height:70px; resize:vertical; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; } .row label { margin:0; }
+  .checks label { display:inline-flex; gap:4px; align-items:center; margin-right:10px; color:var(--ink); }
+  button { padding:8px 14px; border:0; border-radius:6px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
+  button.secondary { background:#eef2ff; color:var(--accent); } button:disabled { opacity:.5; cursor:default; }
+  #steps { list-style:none; margin:0; padding:0; font-size:13px; max-height:320px; overflow:auto; }
+  #steps li { padding:5px 0; border-bottom:1px dashed var(--line); display:flex; gap:8px; }
+  .agent { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12px; padding:0 6px; border-radius:4px; background:#eef2ff; color:var(--accent); white-space:nowrap; }
+  .agent.researcher { background:#ecfdf5; color:var(--ok); } .agent.critic { background:#fffbeb; color:var(--warn); } .agent.writer { background:#fdf2f8; color:#be185d; } .agent.orchestrator { background:#f3f4f6; color:var(--muted); }
+  #answer { line-height:1.65; } #answer h1, #answer h2, #answer h3 { font-size:16px; margin:14px 0 6px; } #answer p { margin:8px 0; } #answer ul { padding-left:20px; }
+  #answer code { background:#f3f4f6; padding:0 4px; border-radius:4px; }
+  a.cite { color:var(--accent); text-decoration:none; font-weight:600; font-size:.85em; vertical-align:super; }
+  #sources li { margin:6px 0; padding:6px 8px; border-radius:6px; } #sources li.hi { background:#fef9c3; }
+  #sources .meta { color:var(--muted); font-size:13px; } #sources blockquote { margin:4px 0 0; padding-left:10px; border-left:3px solid var(--line); color:#374151; font-size:13px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; } th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; } th { color:var(--muted); font-weight:600; }
+  td.num { text-align:right; font-variant-numeric: tabular-nums; }
+  details summary { cursor:pointer; color:var(--accent); font-size:13px; margin:6px 0; }
+  .warn { color:var(--warn); font-size:13px; } .err { color:var(--bad); }
+  .muted { color:var(--muted); font-size:13px; }
+  #recent li { cursor:pointer; padding:4px 0; font-size:13px; border-bottom:1px dashed var(--line); } #recent li:hover { color:var(--accent); }
+  .status { font-weight:600; } .status.done { color:var(--ok); } .status.failed { color:var(--bad); } .status.running, .status.pending { color:var(--warn); }
+  pre { white-space:pre-wrap; font-size:12px; background:#f9fafb; padding:8px; border-radius:6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MARA</h1><span class="sub">multi-agent research assistant · plan → retrieve → summarize → verify → write</span>
+  <span id="health">checking…</span>
+</header>
+<main>
+  <section>
+    <div class="card">
+      <h2>Ask</h2>
+      <textarea id="question" placeholder="e.g. How does Raft elect a leader, and how does that differ from Paxos?"></textarea>
+      <label>Sources</label>
+      <div class="checks">
+        <label><input type="checkbox" name="src" value="kb" checked> kb</label>
+        <label><input type="checkbox" name="src" value="pdf" checked> pdf</label>
+        <label><input type="checkbox" name="src" value="web" checked> web</label>
+        <label><input type="checkbox" id="websearch"> live web search</label>
+      </div>
+      <label>Tags (comma-separated, any of)</label><input type="text" id="tags" placeholder="consensus, raft">
+      <div class="row">
+        <div style="flex:1"><label>Published from</label><input type="date" id="from"></div>
+        <div style="flex:1"><label>to</label><input type="date" id="to"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label>Max critic loops <select id="loops"><option>0</option><option selected>1</option><option>2</option></select></label>
+        <label>Chunks / sub-question <select id="topk"><option>4</option><option selected>6</option><option>8</option></select></label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button id="go">Research</button>
+        <button id="searchonly" class="secondary" title="Run only the retrieval pipeline (no LLM needed)">Search only</button>
+        <span id="jobid" class="muted"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Agent steps (live)</h2>
+      <ul id="steps"><li class="muted">No run yet.</li></ul>
+    </div>
+    <div class="card">
+      <h2>Recent runs</h2>
+      <ul id="recent" style="list-style:none;margin:0;padding:0"><li class="muted">—</li></ul>
+    </div>
+  </section>
+  <section>
+    <div class="card">
+      <h2>Answer <span id="answermeta" class="muted"></span></h2>
+      <div id="answer" class="muted">Ask a question to start a research run, or use “Search only” to inspect retrieval.</div>
+    </div>
+    <div class="card">
+      <h2>Sources</h2>
+      <ol id="sources"></ol>
+    </div>
+    <div class="card">
+      <h2>Trace</h2>
+      <div id="trace" class="muted">—</div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let current = null, es = null;
+
+async function loadHealth() {
+  try {
+    const h = await (await fetch("/health")).json();
+    const c = h.checks;
+    $("#health").innerHTML =
+      `LLM <span class="chip ${c.llm.configured ? "ok" : "bad"}">${esc(c.llm.provider)}${c.llm.configured ? "" : " · no key"}</span>` +
+      `corpus <span class="chip">${c.retriever.bm25_documents} chunks</span>` +
+      `rerank <span class="chip">${esc(c.retriever.reranker)}</span>` +
+      `web <span class="chip">${esc(c.research.web_search)}</span>`;
+    $("#go").disabled = !c.research.ready;
+    $("#go").title = c.research.ready ? "" : (c.research.error || "research not available");
+  } catch (e) { $("#health").textContent = "health check failed"; }
+}
+
+function options() {
+  const src = [...document.querySelectorAll('input[name=src]:checked')].map(i => i.value);
+  const tags = $("#tags").value.split(",").map(t => t.trim()).filter(Boolean);
+  const filters = {};
+  if (tags.length) filters.tags = tags;
+  if ($("#from").value) filters.date_from = $("#from").value;
+  if ($("#to").value) filters.date_to = $("#to").value;
+  return { src, filters: Object.keys(filters).length ? filters : null };
+}
+
+function addStep(agent, message, cls) {
+  const ul = $("#steps");
+  if (ul.firstElementChild?.classList.contains("muted")) ul.innerHTML = "";
+  const li = document.createElement("li");
+  li.innerHTML = `<span class="agent ${esc(agent)}">${esc(agent)}</span><span class="${cls || ""}">${esc(message)}</span>`;
+  ul.appendChild(li); ul.scrollTop = ul.scrollHeight;
+}
+
+async function research() {
+  const question = $("#question").value.trim();
+  if (question.length < 3) return;
+  const o = options();
+  const body = { question, options: { source_types: o.src.length ? o.src : null, filters: o.filters,
+    web_search: $("#websearch").checked, max_loops: +$("#loops").value, top_k: +$("#topk").value } };
+  $("#steps").innerHTML = ""; $("#answer").innerHTML = '<span class="muted">Running…</span>'; $("#sources").innerHTML = ""; $("#trace").textContent = "—";
+  const r = await fetch("/research", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) { addStep("error", (await r.json()).detail || r.statusText, "err"); return; }
+  const { job_id } = await r.json();
+  current = job_id; $("#jobid").textContent = "job " + job_id;
+  if (es) es.close();
+  es = new EventSource(`/research/${job_id}/events`);
+  es.addEventListener("step", ev => { const d = JSON.parse(ev.data); addStep(d.agent, d.message); });
+  es.addEventListener("done", async ev => { es.close(); await loadJob(job_id); loadRecent(); });
+  es.onerror = () => { addStep("stream", "connection lost; polling…", "warn"); es.close(); poll(job_id); };
+}
+
+async function poll(job_id) {
+  const s = await (await fetch(`/research/${job_id}`)).json();
+  if (s.status === "done" || s.status === "failed") { await loadJob(job_id); loadRecent(); } else setTimeout(() => poll(job_id), 1500);
+}
+
+function md(text) {
+  const lines = text.split("\n"); let html = "", inList = false;
+  const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[(\d+)\]/g, (m, n) => `<a class="cite" href="#src-${n}" data-n="${n}">[${n}]</a>`);
+  for (const raw of lines) {
+    const l = raw.trimEnd();
+    const h = l.match(/^(#{1,3})\s+(.*)/);
+    if (h) { if (inList) { html += "</ul>"; inList = false; } html += `<h${h[1].length + 1}>${inline(h[2])}</h${h[1].length + 1}>`; continue; }
+    if (/^\s*[-*]\s+/.test(l)) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${inline(l.replace(/^\s*[-*]\s+/, ""))}</li>`; continue; }
+    if (inList) { html += "</ul>"; inList = false; }
+    if (l.trim()) html += `<p>${inline(l)}</p>`;
+  }
+  if (inList) html += "</ul>";
+  return html;
+}
+
+async function loadJob(job_id) {
+  const s = await (await fetch(`/research/${job_id}`)).json();
+  current = job_id; $("#jobid").textContent = "job " + job_id;
+  $("#answermeta").innerHTML = ` · <span class="status ${s.status}">${s.status}</span>` +
+    (s.citation_coverage != null ? ` · citation coverage ${(s.citation_coverage * 100).toFixed(0)}%` : "") +
+    (s.loop ? ` · ${s.loop} extra loop` : "");
+  $("#answer").innerHTML = s.answer ? md(s.answer) : `<span class="err">${esc(s.error || "no answer")}</span>`;
+  $("#sources").innerHTML = s.sources.map(src => {
+    const where = src.page ? `p. ${src.page}` : (src.section || "");
+    return `<li id="src-${src.n}"><b>[${src.n}]</b> ${esc(src.title)} <span class="meta">· ${esc(src.source_type)}${where ? " · " + esc(where) : ""} · ${esc(src.url_or_path)}</span>
+      <blockquote>“${esc(src.excerpt)}”</blockquote></li>`; }).join("") || '<li class="muted">none</li>';
+  document.querySelectorAll("a.cite").forEach(a => a.onclick = (e) => {
+    e.preventDefault(); const li = $("#src-" + a.dataset.n); if (!li) return;
+    document.querySelectorAll("#sources li").forEach(x => x.classList.remove("hi")); li.classList.add("hi"); li.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+  renderTrace(s);
+  if (s.status === "done" || s.status === "failed") { $("#steps").innerHTML = ""; (await (await fetch(`/research/${job_id}/events`)).text()).split("\n").forEach(line => {
+    if (line.startsWith("data: ")) { try { const d = JSON.parse(line.slice(6)); if (d.agent) addStep(d.agent, d.message); } catch {} } }); }
+}
+
+function renderTrace(s) {
+  const plan = s.plan.map(q => `<tr><td>${esc(q.id)}</td><td>${esc(q.text)}</td><td>${esc(q.sources.join(", "))}</td><td class="num">${(s.evidence[q.id] || []).length}</td><td class="num">${s.notes.filter(n => n.sub_question_id === q.id).length}</td></tr>`).join("");
+  const steps = s.trace.map(t => `<tr><td><span class="agent ${esc(t.agent)}">${esc(t.agent)}</span></td><td class="num">${t.loop}</td><td class="num">${(t.latency_ms / 1000).toFixed(1)}s</td><td class="num">${t.llm_calls}</td><td class="num">${t.input_tokens + t.output_tokens}</td><td class="num">${t.cache_hits}</td><td>${t.error ? `<span class="err">${esc(t.error)}</span>` : esc(t.output_summary)}</td></tr>`).join("");
+  const crit = s.critique ? `<p class="muted">Critic: covered ${s.critique.covered.length}, gaps ${s.critique.gaps.length}, conflicts ${s.critique.conflicts.length}, new sub-questions ${s.critique.new_sub_questions.length}</p>` +
+    (s.critique.gaps.length ? `<ul class="warn">${s.critique.gaps.map(g => `<li>${esc(g.sub_question_id)}: ${esc(g.reason)}</li>`).join("")}</ul>` : "") +
+    (s.critique.conflicts.length ? `<ul class="warn">${s.critique.conflicts.map(c => `<li>${esc(c.claim_a)} ↔ ${esc(c.claim_b)}: ${esc(c.note)}</li>`).join("")}</ul>` : "") : "";
+  const warns = s.warnings.length ? `<details><summary>${s.warnings.length} warning(s)</summary><ul class="warn">${s.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></details>` : "";
+  const total = s.trace.reduce((a, t) => a + t.llm_calls, 0), tokens = s.trace.reduce((a, t) => a + t.input_tokens + t.output_tokens, 0);
+  $("#trace").innerHTML = `<p class="muted">${s.trace.length} steps · ${total} LLM calls · ${tokens} tokens · ${s.trace.reduce((a, t) => a + t.cache_hits, 0)} cache hits</p>
+    <details open><summary>Plan &amp; evidence</summary><table><tr><th>id</th><th>sub-question</th><th>sources</th><th>chunks</th><th>notes</th></tr>${plan}</table></details>
+    ${crit}
+    <details open><summary>Steps</summary><table><tr><th>agent</th><th>loop</th><th>latency</th><th>calls</th><th>tokens</th><th>cached</th><th>result</th></tr>${steps}</table></details>
+    ${warns}
+    <details><summary>Raw state (JSON)</summary><pre>${esc(JSON.stringify(s, null, 2))}</pre></details>`;
+}
+
+async function loadRecent() {
+  try {
+    const jobs = await (await fetch("/research?limit=10")).json();
+    $("#recent").innerHTML = jobs.map(j => `<li data-id="${esc(j.job_id)}"><span class="status ${j.status}">${j.status}</span> · ${esc(j.question)} <span class="muted">(${j.n_sources} sources)</span></li>`).join("") || '<li class="muted">—</li>';
+    document.querySelectorAll("#recent li[data-id]").forEach(li => li.onclick = () => loadJob(li.dataset.id));
+  } catch { $("#recent").innerHTML = '<li class="muted">unavailable</li>'; }
+}
+
+async function searchOnly() {
+  const query = $("#question").value.trim(); if (!query) return;
+  const o = options();
+  const body = { query, filters: Object.assign({ source_types: o.src.length ? o.src : null }, o.filters || {}), config: { top_k: 8 } };
+  $("#answer").innerHTML = '<span class="muted">Searching…</span>'; $("#sources").innerHTML = ""; $("#trace").textContent = "—"; $("#answermeta").textContent = "";
+  const r = await fetch("/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) { $("#answer").innerHTML = `<span class="err">${esc((await r.json()).detail || r.statusText)}</span>`; return; }
+  const res = await r.json();
+  $("#answer").innerHTML = `<p class="muted">Retrieval only (${esc(res.mode)}${res.rerank ? " + rerank" : ""}, score = ${esc(res.score_kind)}, ${res.latency_ms.toFixed(0)} ms; stages: ${esc(JSON.stringify(res.stage_counts))})</p>`;
+  $("#sources").innerHTML = res.chunks.map(c => `<li><b>#${c.rank}</b> ${esc(c.chunk.title)} <span class="meta">· ${esc(c.chunk.source_type)}${c.chunk.page ? " · p. " + c.chunk.page : (c.chunk.section ? " · " + esc(c.chunk.section) : "")} · score ${c.score.toFixed(3)}</span><blockquote>${esc(c.chunk.text.slice(0, 400))}${c.chunk.text.length > 400 ? "…" : ""}</blockquote></li>`).join("") || '<li class="muted">no results</li>';
+}
+
+$("#go").onclick = research; $("#searchonly").onclick = searchOnly;
+$("#question").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) research(); });
+loadHealth(); loadRecent(); setInterval(loadHealth, 30000);
+</script>
+</body>
+</html>

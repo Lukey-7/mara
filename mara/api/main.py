@@ -11,7 +11,8 @@ from fastapi import FastAPI, Request
 from mara import __version__
 from mara.agents.factory import build_job_store, build_orchestrator, build_research_service
 from mara.agents.jobs import TraceArchive
-from mara.api import ingest_routes, research_routes, search_routes
+from mara.api import ingest_routes, research_routes, search_routes, ui
+from mara.core.cache import RedisCache
 from mara.core.chunk_store import ChunkStore, make_chroma_client
 from mara.core.config import Settings, get_settings
 from mara.ingest.factory import build_pipeline, build_store
@@ -74,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 orchestrator = build_orchestrator(
                     settings, st.llm, st.retriever, st.pipeline,
                     known_tags=lambda: _known_tags(st.store),
+                    cache=RedisCache(st.redis) if redis_ok else None,
                 )  # fmt: skip
                 st.research = build_research_service(settings, orchestrator, st.jobs)
                 st.trace_archive = TraceArchive(settings.trace_dir) if settings.trace_dir else None
@@ -89,6 +91,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ingest_routes.router)
     app.include_router(search_routes.router)
     app.include_router(research_routes.router)
+    app.include_router(ui.router)
 
     @app.get("/health")
     async def health(request: Request) -> dict:

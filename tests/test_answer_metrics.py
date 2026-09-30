@@ -49,7 +49,8 @@ def finished_state() -> ResearchState:
     state.critique = Critique(gaps=[Gap(sub_question_id="q2", reason="none")])
     state.trace = [
         AgentStep(agent="planner", started_at=now, llm_calls=1, input_tokens=100, output_tokens=20),
-        AgentStep(agent="summarizer", started_at=now, llm_calls=2, output_summary="3 notes kept, 2 dropped (quote not verbatim)"),
+        AgentStep(agent="summarizer", started_at=now, llm_calls=2,
+                  output_summary="3 notes kept, 2 dropped (quote not verbatim)"),
         AgentStep(agent="writer", started_at=now, llm_calls=1, input_tokens=300, output_tokens=80),
     ]  # fmt: skip
     state.loop = 1

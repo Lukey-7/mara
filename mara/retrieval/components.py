@@ -1,11 +1,20 @@
 """Custom Haystack components that bridge the pipeline to our own abstractions."""
 
 import asyncio
+from typing import Protocol
 
 from haystack import Document, component
 from haystack_integrations.components.retrievers.chroma import ChromaEmbeddingRetriever
 
 from mara.llm.base import LLMProvider
+
+
+class Reranker(Protocol):
+    """What the pipeline's last stage must look like: a Haystack component that reorders
+    (query, documents) and keeps top_k. Satisfied structurally by Haystack's
+    SentenceTransformersSimilarityRanker (the cross-encoder) and by PassthroughRanker."""
+
+    def run(self, query: str, documents: list[Document], top_k: int | None = None) -> dict: ...
 
 
 @component

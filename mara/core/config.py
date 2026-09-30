@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     web_search_provider: Literal["none", "duckduckgo", "tavily"] = "none"
     tavily_api_key: SecretStr | None = None
     web_search_results: int = 3  # pages fetched + ingested per sub-question
+    web_search_cache_ttl_s: int = 24 * 3600
     trace_dir: str | None = "data/traces"  # JSON per finished run; None disables
     job_ttl_s: int = 7 * 24 * 3600
 

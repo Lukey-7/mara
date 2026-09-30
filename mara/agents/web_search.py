@@ -8,6 +8,8 @@ from typing import Protocol
 import httpx
 from pydantic import BaseModel
 
+from mara.core.cache import RedisCache, redis_cached
+
 log = logging.getLogger(__name__)
 
 
@@ -34,6 +36,23 @@ class NoopWebSearch:
 
     async def search(self, query: str, max_results: int) -> list[WebResult]:
         return []
+
+
+class CachedWebSearch:
+    """Wraps any provider with the Redis function decorator: the same query within the TTL
+    does not hit the (rate-limited) search API again. Failures are not cached."""
+
+    def __init__(self, inner: WebSearchProvider, cache: RedisCache, ttl_s: int) -> None:
+        self.inner, self.name = inner, inner.name
+
+        @redis_cached(cache, namespace=f"websearch:{inner.name}", ttl_s=ttl_s)
+        async def search_json(query: str, max_results: int) -> list[dict]:
+            return [r.model_dump() for r in await inner.search(query, max_results)]
+
+        self._search_json = search_json
+
+    async def search(self, query: str, max_results: int) -> list[WebResult]:
+        return [WebResult(**r) for r in await self._search_json(query, max_results)]
 
 
 class DuckDuckGoWebSearch:

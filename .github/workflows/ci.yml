@@ -8,12 +8,19 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # See [tool.uv] in pyproject.toml: NLTK rejects hard-linked data files.
+      UV_LINK_MODE: copy
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.12.3"
+          enable-cache: true
       - run: uv sync --frozen --python 3.12
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      # No API keys and no model downloads: the suite uses a fake LLM, fake embeddings,
+      # fakeredis and an embedded Chroma.
       - run: uv run pytest -q

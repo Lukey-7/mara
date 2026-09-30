@@ -63,3 +63,9 @@ torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
+
+# Copy (not hard-link) packages out of uv's cache. NLTK >= 3.10 refuses to open data files
+# with more than one hard link (CWE-59 guard), and llama-index-core bundles its sentence
+# tokenizer data inside the wheel, so a hard-linked install breaks semantic chunking on Linux.
+[tool.uv]
+link-mode = "copy"

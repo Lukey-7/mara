@@ -1,8 +1,10 @@
 """Redis-backed cache primitives: deterministic key building + a fail-open byte cache."""
 
+import functools
 import hashlib
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import redis.asyncio as redis
@@ -22,6 +24,31 @@ def make_cache_key(version: str, namespace: str, provider: str, model: str, **pa
     canonical = json.dumps(parts, sort_keys=True, separators=(",", ":"), default=str)
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return f"mara:{version}:{namespace}:{provider}:{model}:{digest}"
+
+
+def redis_cached(cache: "RedisCache", namespace: str, ttl_s: int, version: str = "v1"):
+    """Decorator: cache an async function's JSON-serialisable result in Redis.
+
+    Key = hash of the function's name and its arguments; value = JSON; expiry = ttl_s.
+    Fail-open comes from RedisCache: a Redis outage just means the function runs.
+    (CachedLLM is the same idea specialised for generate/embed, with per-text embedding keys.)
+    """
+
+    def decorator(fn: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+        @functools.wraps(fn)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            key = make_cache_key(
+                version, namespace, "fn", fn.__qualname__, args=args, kwargs=kwargs
+            )
+            if (raw := await cache.get(key)) is not None:
+                return json.loads(raw)
+            result = await fn(*args, **kwargs)
+            await cache.set(key, json.dumps(result, default=str).encode(), ttl_s)
+            return result
+
+        return wrapper
+
+    return decorator
 
 
 class RedisCache:

@@ -11,26 +11,33 @@ from mara.agents.researcher import Researcher
 from mara.agents.runner import ResearchService
 from mara.agents.summarizer import Summarizer
 from mara.agents.web_search import (
+    CachedWebSearch,
     DuckDuckGoWebSearch,
     NoopWebSearch,
     TavilyWebSearch,
     WebSearchProvider,
 )
 from mara.agents.writer import Writer
+from mara.core.cache import RedisCache
 from mara.core.config import Settings
 from mara.ingest.pipeline import IngestionPipeline
 from mara.llm.base import LLMProvider
 from mara.retrieval.hybrid import Retriever
 
 
-def build_web_search(settings: Settings) -> WebSearchProvider:
+def build_web_search(settings: Settings, cache: RedisCache | None = None) -> WebSearchProvider:
+    provider: WebSearchProvider
     if settings.web_search_provider == "duckduckgo":
-        return DuckDuckGoWebSearch()
-    if settings.web_search_provider == "tavily":
+        provider = DuckDuckGoWebSearch()
+    elif settings.web_search_provider == "tavily":
         if settings.tavily_api_key is None:
             raise ValueError("WEB_SEARCH_PROVIDER=tavily but TAVILY_API_KEY is not set")
-        return TavilyWebSearch(settings.tavily_api_key.get_secret_value())
-    return NoopWebSearch()
+        provider = TavilyWebSearch(settings.tavily_api_key.get_secret_value())
+    else:
+        return NoopWebSearch()
+    if cache is not None and settings.cache_enabled:
+        provider = CachedWebSearch(provider, cache, settings.web_search_cache_ttl_s)
+    return provider
 
 
 def build_orchestrator(
@@ -39,13 +46,14 @@ def build_orchestrator(
     retriever: Retriever,
     ingest: IngestionPipeline | None,
     known_tags: KnownTags = None,
+    cache: RedisCache | None = None,
 ) -> Orchestrator:
     structured = StructuredLLM(llm, temperature=settings.agent_temperature)
     return Orchestrator(
         planner=Planner(structured, known_tags),
         researcher=Researcher(
             retriever,
-            build_web_search(settings),
+            build_web_search(settings, cache),
             ingest,
             web_results=settings.web_search_results,
             fetch_timeout_s=settings.web_fetch_timeout_s,

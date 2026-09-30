@@ -84,9 +84,8 @@ def main() -> None:
     print(f"| Citation coverage (mean) | {mean([r.coverage for r in done]):.3f} |")
     print(f"| Citation validity (mean) | {mean([r.validity for r in done]):.3f} |")
     if judge is not None:
-        print(
-            f"| Faithfulness, LLM-as-judge (mean) | {mean([r.faithfulness for r in done if r.faithfulness is not None]):.3f} |"
-        )
+        judged = [r.faithfulness for r in done if r.faithfulness is not None]
+        print(f"| Faithfulness, LLM-as-judge (mean) | {mean(judged):.3f} |")
     print(f"| Sources per answer (mean) | {mean([r.n_sources for r in done]):.1f} |")
     print(f"| Notes dropped by quote check (total) | {sum(r.notes_dropped for r in done)} |")
     print(f"| Runs that looped | {sum(1 for r in done if r.loops)} |")

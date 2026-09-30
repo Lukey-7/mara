@@ -35,5 +35,11 @@ compare-chunking:  ## semantic vs fixed-size chunking on one KB note
 eval-retrieval: ## Recall@5 / MRR / latency for BM25, dense, hybrid, hybrid+rerank
 	uv run python eval/run_retrieval_eval.py
 
-run-local:      ## API with embedded Chroma + local embeddings, no Docker or API key needed
+run-local:      ## API with embedded Chroma + local embeddings, no Docker needed (LLM key for /research)
 	CHROMA_PERSIST_PATH=./data/chroma CACHE_ENABLED=false uv run uvicorn mara.api.main:app --port 8080
+
+demo:           ## ingest the sample corpus and run one research question against the running API
+	uv run python scripts/demo.py
+
+eval-answers:   ## citation coverage / validity / LLM-as-judge over eval/answer_eval.json
+	uv run python eval/run_answer_eval.py --judge

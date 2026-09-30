@@ -1,165 +1,212 @@
 # MARA — Multi-Agent Research Assistant
 
-A research assistant that **plans** a question into sub-questions, **retrieves** evidence with
-hybrid search (BM25 + dense + reranking) over PDFs, web pages and an internal knowledge base,
-**summarizes** it into verifiable evidence notes, **checks** coverage, and **writes** a
-citation-backed answer. Every run produces a trace of what each agent did.
+Ask a research question over your own documents and get an answer in which **every factual
+sentence carries a citation you can click**, plus a trace of how the system got there.
 
-> Status: **Phase 5 of 6** (skeleton, ingestion, hybrid retrieval, agents, answer-quality
-> eval harness). The UI follows. Numbers in this README come only from `eval/`.
+MARA plans the question into sub-questions, retrieves evidence with hybrid search (BM25 +
+dense + cross-encoder reranking) over PDFs, web pages and an internal knowledge base,
+summarises it into evidence notes that must quote their source verbatim, checks coverage,
+and writes the answer.
 
-## Stack
+## The problem
 
-| Layer | Tool | Job |
-|---|---|---|
-| API | FastAPI | HTTP endpoints, SSE progress streaming |
-| Ingestion | LlamaIndex | loaders, semantic chunking, metadata → Chroma |
-| Retrieval | Haystack 2.x | BM25 + embedding retrievers → RRF → cross-encoder reranker |
-| Vector store | ChromaDB | persistent, metadata-filterable |
-| Cache / state | Redis | LLM + embedding cache, job status, rate limiting |
-| LLM | Gemini (default) / OpenAI | behind one `LLMProvider` interface |
-| Embeddings / reranking | sentence-transformers (local, CPU) or Gemini / OpenAI embeddings | `bge-small-en-v1.5`, `ms-marco-MiniLM-L-6-v2` |
-| Packaging | Docker Compose | `api` + `redis` + `chroma` |
+A single "stuff everything into one prompt" call cannot show where a claim came from, and a
+plain RAG call retrieves once with the user's wording and hopes. Research questions are
+compound ("compare X and Y, and explain when Z fails"), sources disagree, and a confident
+wrong answer is worse than "the corpus does not say". MARA's design goals:
 
-## Run
+1. **No citation without evidence**: a claim survives only if code can find its quote in the
+   cited chunk.
+2. **Say what is missing**: gaps and failed steps end up in the answer, not hidden.
+3. **Explainable control flow**: plain Python, one state object, a trace per run.
 
-```bash
-cp .env.example .env          # add GEMINI_API_KEY
-docker compose up --build     # http://localhost:8080/health, docs at /docs
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Ingestion [Ingestion — LlamaIndex]
+    PDF[PDF upload] --> L[Loaders<br/>PDFReader / trafilatura / markdown]
+    URL[URL list] --> L
+    KB[knowledge_base/*.md] --> L
+    L --> C[SemanticSplitterNodeParser<br/>+ size cap]
+    C --> E[Embeddings<br/>local bge-small or Gemini/OpenAI]
+  end
+  E --> CH[(ChromaDB<br/>chunks + vectors + metadata)]
+  E --> BM[(BM25 index<br/>Haystack in-memory)]
+
+  subgraph Retrieval [Query pipeline — Haystack]
+    Q[query + filters] --> R1[InMemoryBM25Retriever]
+    Q --> QE[query embedding] --> R2[ChromaEmbeddingRetriever]
+    R1 --> J[DocumentJoiner<br/>reciprocal rank fusion]
+    R2 --> J
+    J --> RR[Cross-encoder reranker<br/>ms-marco-MiniLM-L-6-v2]
+  end
+  CH --> R2
+  BM --> R1
+
+  subgraph Agents [Agents — plain Python]
+    O[Orchestrator] --> P[Planner] & RS[Researcher] & S[Summarizer] & CR[Critic] & W[Writer]
+  end
+  RS --> Q
+  RR --> RS
+  P & S & CR & W --> LLM[LLMProvider<br/>Gemini / OpenAI<br/>cache · rate limit · retry]
+  LLM <--> RED[(Redis<br/>LLM + embedding cache,<br/>job state, events)]
+  API[FastAPI<br/>REST + SSE + UI] --> O
+  API --> L
+  O --> RED
 ```
 
-Local development:
+## Agent flow
 
-```bash
-uv sync                       # creates .venv from uv.lock
-docker compose up redis chroma -d
-make run                      # uvicorn with reload on :8080
-make test                     # pytest, no API key needed
-make lint
-```
-
-Load the sample corpus (10 KB notes, 3 Wikipedia PDFs, 5 URLs — see `sample_corpus/README.md`):
-
-```bash
-make ingest-sample
-curl "http://localhost:8080/documents?source_type=kb&tag=consensus"
-```
-
-## Ingestion
-
-| Endpoint | What it does |
-|---|---|
-| `POST /ingest/pdf` | multipart upload; one citable unit per page; tags / title / published_date optional |
-| `POST /ingest/url` | fetch + boilerplate removal (trafilatura); per-URL errors don't fail the batch |
-| `POST /ingest/kb` | re-scan `knowledge_base/`; one unit per markdown section; frontmatter = metadata |
-| `GET /documents` | list with filters: `source_type`, `tag`, `date_from`, `date_to`, `q` |
-| `DELETE /documents/{doc_id}` | remove all chunks of a document |
-
-Ingestion is idempotent (content-hashed `doc_id`), chunks are produced by LlamaIndex's
-`SemanticSplitterNodeParser` (split where sentence-embedding similarity drops), with a
-fixed-size `SentenceSplitter` available via `CHUNKING_STRATEGY=fixed`. Compare them on a file:
-
-```bash
-make compare-chunking
-```
-
-Embeddings default to a local model (`BAAI/bge-small-en-v1.5`, CPU) so ingestion and search
-need no API key; set `EMBEDDING_PROVIDER=gemini|openai` to use API embeddings instead.
-
-## Hybrid retrieval
-
-```
-query ─┬─ BM25 (Haystack InMemoryBM25Retriever) ───────────────┐
-       └─ query embedding → ChromaEmbeddingRetriever ──────────┴→ DocumentJoiner (RRF) → cross-encoder → top_k
-```
-
-`POST /search` runs the pipeline alone, with metadata filters (`source_types`, `tags`,
-`doc_ids`, `date_from`/`date_to`) applied to both legs, and `config.mode`
-(`bm25` | `dense` | `hybrid`) / `config.rerank` to pick a configuration.
-
-Eval (`make eval-retrieval`; 35 questions over the sample corpus, 317 chunks, graded at the
-level of the relevant markdown section / PDF document; laptop CPU; 2026-09-30):
-
-| Configuration | Recall@5 | MRR@10 | mean latency (ms) | p50 latency (ms) |
-|---|---|---|---|---|
-| BM25 only | 0.871 | 0.797 | 4 | 4 |
-| Dense only (bge-small) | 0.857 | 0.809 | 36 | 35 |
-| Hybrid (RRF) | 0.914 | 0.790 | 53 | 53 |
-| Hybrid + rerank (ms-marco-MiniLM-L-6-v2) | 0.929 | 0.871 | 1790 | 1835 |
-
-Hybrid retrieval recovers what either leg misses; the cross-encoder fixes the ordering but
-costs ~1.8 s per query on a CPU. Two of 35 questions were missed by every configuration
-(on-topic PDF/web chunks outranked the labelled KB section). Small corpus: treat the ordering
-of configurations, not the absolute numbers, as the result. Details in
-[docs/LEARNING.md](docs/LEARNING.md#phase-3--hybrid-retrieval-haystack).
-
-Run without Docker at all (embedded Chroma, local models):
-
-```bash
-make run-local
-```
-
-## Research runs (the agents)
-
-```
-Planner → Researcher (parallel, per sub-question) → Summarizer → Critic ─┐ (≤1 loop)
-                                                        └─────────────────┘ → Writer
+```mermaid
+flowchart TD
+  A[POST /research] --> PL[Planner<br/>2–5 sub-questions<br/>sources + filters]
+  PL --> RE[Researcher<br/>per sub-question, in parallel:<br/>optional web search → ingest,<br/>hybrid retrieval]
+  RE --> SU[Summarizer<br/>notes: claim, quote, chunk_id<br/>quote must be verbatim or dropped]
+  SU --> CR{Critic<br/>gaps? conflicts?}
+  CR -- "new sub-questions and loop < max_loops (1)" --> RE
+  CR -- otherwise --> WR[Writer<br/>numbered sources → cited answer<br/>invalid citations stripped]
+  WR --> D[done: answer, sources, trace]
+  PL -. "fails → question as one sub-question" .-> RE
+  RE -. "web search fails → warning, internal corpus only" .-> SU
 ```
 
 | Agent | Job | Guarantee enforced in code |
 |---|---|---|
-| Planner | question → 2–5 sub-questions, each with sources (`kb`/`pdf`/`web`) + filters | ids renumbered, sources clamped to what the request allows |
+| Planner | question → 2–5 sub-questions with sources (`kb`/`pdf`/`web`) + filters | ids renumbered, sources clamped to what the request allows |
 | Researcher | hybrid retrieval per sub-question; optional web search → fetch → clean → ingest | failures become warnings, never abort |
 | Summarizer | chunks → notes `{claim, supporting_quote, chunk_id}` | quote must be a verbatim substring of the chunk or the note is dropped |
 | Critic | gaps, conflicts, up to 3 new sub-questions | coverage computed from verified notes; at most `max_loops` extra rounds |
 | Writer | numbered sources → markdown answer with `[n]` citations | citations to unknown sources stripped; coverage recorded |
 
+## Stack — one clear job each
+
+| Component | Job |
+|---|---|
+| **LlamaIndex** | ingestion: `PDFReader`, `SemanticSplitterNodeParser` (semantic chunking), `SentenceSplitter` baseline |
+| **Haystack 3** | query pipeline: `InMemoryBM25Retriever` + `ChromaEmbeddingRetriever` → `DocumentJoiner` (RRF) → `SentenceTransformersSimilarityRanker` |
+| **ChromaDB** | persistent vector store with metadata filtering, shared by both frameworks (one chunk schema: `mara/core/schema.py`) |
+| **Redis** | LLM / embedding / web-search cache with TTLs, research-job state and event log |
+| **FastAPI** | REST API, SSE progress stream, the single-page UI |
+| **Gemini / OpenAI** | generation behind one `LLMProvider` protocol (structured JSON output, validated) |
+| **sentence-transformers** | local embeddings (`bge-small-en-v1.5`) and cross-encoder reranking on a laptop CPU |
+| **Docker Compose** | `api` + `redis` + `chroma` |
+
+Why both LlamaIndex and Haystack, and every other choice: [docs/DECISIONS.md](docs/DECISIONS.md).
+
+## Evaluation
+
+### Retrieval (`make eval-retrieval`)
+
+35 questions over the sample corpus (18 documents, 317 chunks), graded at the level of the
+relevant markdown section / PDF document. Laptop CPU, semantic chunking, local
+`bge-small-en-v1.5` embeddings. Run on 2026-09-30.
+
+| Configuration | Recall@5 | MRR@10 | mean latency (ms) | p50 latency (ms) |
+|---|---|---|---|---|
+| BM25 only | 0.871 | 0.797 | 4 | 4 |
+| Dense only | 0.857 | 0.809 | 36 | 35 |
+| Hybrid (RRF) | 0.914 | 0.790 | 53 | 53 |
+| Hybrid + rerank | 0.929 | 0.871 | 1790 | 1835 |
+
+Hybrid retrieval recovers what either leg misses; the cross-encoder fixes the ordering at a
+cost of ~1.8 s per query on a CPU. Two of the 35 questions were missed by every
+configuration: on-topic PDF chunks outranked the single labelled KB section (a labelling
+limitation, recorded rather than hidden). The corpus is small, so treat the *ordering* of
+configurations as the result, not the absolute values.
+
+### Answer quality (`make eval-answers`)
+
+`eval/answer_eval.json` has 15 research questions (one deliberately unanswerable). The
+script reports citation coverage, citation validity (the cited quote occurs verbatim in the
+cited chunk) and an LLM-as-judge faithfulness score that sees only the cited excerpts.
+
+**Not yet run**: it needs an LLM API key, which the build environment did not have. No
+answer-quality numbers are claimed until it has been run.
+
+## Run it
+
+Local, no Docker (embedded on-disk Chroma, in-memory job store, local models) — the path
+this project was built and verified on:
+
 ```bash
-curl -X POST localhost:8080/research -H 'content-type: application/json' \
-  -d '{"question": "How does Raft elect a leader, and how does that differ from Paxos?"}'
-# → {"job_id": "...", "status": "pending"}
-curl localhost:8080/research/<job_id>            # status, answer, sources, evidence, trace
-curl -N localhost:8080/research/<job_id>/events  # SSE: one event per agent step
+uv sync
+cp .env.example .env              # add GEMINI_API_KEY (or OPENAI_API_KEY + LLM_PROVIDER=openai)
+make run-local                    # http://localhost:8080/  (UI; API docs at /docs)
+make ingest-sample                # 10 KB notes, 3 Wikipedia PDFs, 5 Wikipedia pages
+make eval-retrieval               # the retrieval table above
+make demo                         # one research question end to end (needs the LLM key)
 ```
 
-Every run records a trace (per agent: input summary, output summary, latency, LLM calls,
-tokens, cache hits, errors) and is archived to `data/traces/<job_id>.json`. Needs an LLM key
-(`GEMINI_API_KEY` or `OPENAI_API_KEY`); set `WEB_SEARCH_PROVIDER=duckduckgo` or `tavily` to
-allow live web evidence.
+With Docker (adds real Redis and a Chroma server; provided but untested, see Limitations):
 
-## Answer quality eval
+```bash
+docker compose up --build         # api :8080, redis, chroma
+```
 
-`eval/answer_eval.json` holds 15 research questions (one deliberately unanswerable).
-`eval/run_answer_eval.py` runs them through the API and reports, per answer:
+Search and ingestion work with no API key (embeddings and reranking are local); research
+runs need one. Development:
 
-- **citation coverage**: share of factual sentences carrying a `[n]` citation;
-- **citation validity**: the cited source's quote occurs verbatim in the cited chunk
-  (re-checked against the evidence);
-- **faithfulness** (`--judge`): LLM-as-judge that sees only the answer and the cited
-  excerpts, and classifies each sentence as supported / partially / unsupported;
-- plus notes dropped by the quote check, loops, gaps, whether the answer admits a gap, LLM
-  calls, tokens and latency.
+```bash
+make test        # 108 tests: fake LLM, fake embeddings, fakeredis, embedded Chroma
+make lint        # ruff check + format check
+make compare-chunking   # semantic vs fixed-size chunk boundaries on one document
+```
 
-**Results: not yet run.** The eval needs an LLM key, which this build environment did not
-have. Run it with `uv run python eval/run_answer_eval.py --judge` against a running API and
-paste the table here; until then this README shows no answer-quality numbers.
+## API
+
+| Endpoint | What it does |
+|---|---|
+| `GET /` | single-page UI: ask, watch agent steps stream, read the cited answer, expand the trace |
+| `POST /research` | start a run → `202 {job_id}` |
+| `GET /research/{id}` | status, answer, sources, evidence, critique, warnings, trace |
+| `GET /research/{id}/events` | server-sent events, one per agent step |
+| `POST /search` | the retrieval pipeline alone (`mode`: bm25 / dense / hybrid, `rerank`, filters) |
+| `POST /ingest/pdf` · `/ingest/url` · `/ingest/kb` | ingest a PDF upload, a URL list, or re-scan `knowledge_base/` |
+| `GET /documents` · `DELETE /documents/{id}` | list with filters (`source_type`, `tag`, dates, `q`), delete |
+| `GET /health` | per-dependency status; `degraded` instead of failing when something is down |
 
 ## Layout
 
 ```
-mara/core       config, shared Chunk schema + Chroma layout, metadata filters, ChunkStore, cache
-mara/llm        LLMProvider protocol, Gemini/OpenAI adapters, retry+rate-limit, cache decorator
+mara/core       config, Chunk schema + Chroma layout, metadata filters, ChunkStore, cache
+mara/llm        LLMProvider protocol, Gemini/OpenAI adapters, local embeddings, retry, cache
 mara/ingest     LlamaIndex loaders (PDF / HTML / markdown), semantic + fixed chunkers, pipeline
-mara/api        FastAPI app + ingestion routes
 mara/retrieval  Haystack pipelines: BM25 + dense → RRF → cross-encoder; own rrf.py; BM25 index
 mara/agents     Planner, Researcher, Summarizer, Critic, Writer, orchestrator, jobs, web search
-knowledge_base/ internal KB: markdown notes with frontmatter (title, tags, published_date)
-sample_corpus/  public-domain-ish PDFs + URL list for demos and evals
-prompts/        one prompt file per agent
-eval/           retrieval and answer-quality evals
-scripts/        ingest_sample_corpus.py, compare_chunking.py
-docs/           DECISIONS.md, LEARNING.md, ARCHITECTURE.md
+mara/api        FastAPI app, routes, UI
+mara/static     index.html (plain HTML + JS, no build step)
+prompts/        one prompt file per LLM-facing agent (+ the eval judge)
+knowledge_base/ internal KB: markdown notes with frontmatter
+sample_corpus/  CC BY-SA Wikipedia PDFs + URL list
+eval/           retrieval + answer-quality evals
+scripts/        ingest_sample_corpus.py, compare_chunking.py, demo.py
+docs/           ARCHITECTURE.md, DECISIONS.md, LEARNING.md, INTERVIEW.md
 ```
 
-See [docs/DECISIONS.md](docs/DECISIONS.md) for the why behind each choice and
-[docs/LEARNING.md](docs/LEARNING.md) for a phase-by-phase walkthrough.
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) walks one query through every file and function.
+
+## Limitations
+
+- **Verified by tests and a retrieval eval, not yet by live LLM runs.** The agent flow is
+  covered by scripted-LLM tests and real retrieval; the Gemini/OpenAI adapters are tested
+  against stub clients. Run `make demo` and `make eval-answers` with a key before trusting
+  answer quality.
+- **`docker compose up` was not executed in the build environment** (no Docker daemon); the
+  non-Docker path (`make run-local`) and CI were.
+- Small sample corpus: retrieval numbers are optimistic in absolute terms.
+- Reranking costs ~1.8 s per query on a CPU.
+- Research jobs are in-process asyncio tasks: they do not survive an API restart.
+- The BM25 index lives in memory and is rebuilt from Chroma at startup (fine to ~100k chunks).
+- Pages fetched by web search are ingested permanently (tagged `web-search`).
+- Verbatim-quote checking drops a true claim when the model fails to copy its quote exactly.
+- English only (sentence tokenizer, embedding model, reranker).
+
+## Future work
+
+- Job queue (Arq/Celery) so runs survive restarts and scale across workers.
+- OpenSearch (keyword + vector in one engine) in place of in-memory BM25 + Chroma at scale.
+- ONNX / quantised reranker, or rerank fewer candidates, to cut the 1.8 s.
+- One summariser call for all sub-questions to cut LLM calls per run.
+- Human-labelled answer set for completeness; richer retrieval labels (multiple relevant units).
+- Streaming the writer's tokens over the existing SSE channel.
