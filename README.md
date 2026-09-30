@@ -148,7 +148,7 @@ Search and ingestion work with no API key (embeddings and reranking are local); 
 runs need one. Development:
 
 ```bash
-make test        # 108 tests: fake LLM, fake embeddings, fakeredis, embedded Chroma
+make test        # 112 tests: fake LLM, fake embeddings, fakeredis, embedded Chroma
 make lint        # ruff check + format check
 make compare-chunking   # semantic vs fixed-size chunk boundaries on one document
 ```

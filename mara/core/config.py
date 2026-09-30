@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     embedding_dimensions: int | None = 768
     embedding_batch_size: int = 100  # Gemini's per-request cap is 100 texts
 
+    # --- API ---
+    api_rate_limit_per_minute: int = 60  # per client, POST /research and /search; 0 disables
+
     # --- Agents (Phase 4) ---
     agent_temperature: float = 0.2
     agent_timeout_s: float = 120.0  # per agent step; a timed-out step degrades, not aborts

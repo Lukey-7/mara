@@ -6,12 +6,13 @@ from contextlib import asynccontextmanager
 
 import httpx
 import redis.asyncio as redis
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 
 from mara import __version__
 from mara.agents.factory import build_job_store, build_orchestrator, build_research_service
 from mara.agents.jobs import TraceArchive
 from mara.api import ingest_routes, research_routes, search_routes, ui
+from mara.api.rate_limit import RateLimiter, rate_limit
 from mara.core.cache import RedisCache
 from mara.core.chunk_store import ChunkStore, make_chroma_client
 from mara.core.config import Settings, get_settings
@@ -32,6 +33,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         st = app.state
         st.settings = settings
         st.redis = redis.Redis.from_url(settings.redis_url)
+        st.rate_limiter = (
+            RateLimiter(st.redis, settings.api_rate_limit_per_minute)
+            if settings.api_rate_limit_per_minute > 0
+            else None
+        )
         st.llm = st.store = st.pipeline = st.bm25 = st.retriever = None
         st.research = st.jobs = st.trace_archive = None
         st.llm_error = llm_configuration_error(settings)  # generate() unavailable, embed() fine
@@ -89,8 +95,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="MARA", version=__version__, lifespan=lifespan)
     app.include_router(ingest_routes.router)
-    app.include_router(search_routes.router)
-    app.include_router(research_routes.router)
+    limited = [Depends(rate_limit)]  # per-client, Redis-backed, POST only
+    app.include_router(search_routes.router, dependencies=limited)
+    app.include_router(research_routes.router, dependencies=limited)
     app.include_router(ui.router)
 
     @app.get("/health")
