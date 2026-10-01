@@ -50,19 +50,17 @@
 | Docker | `Dockerfile` (multi-stage), `docker-compose.yml` (api + redis + chroma) — written, **never run** |
 | OpenAI/Gemini APIs | `mara/llm/gemini.py::GeminiProvider` (`google-genai`), `mara/llm/openai_provider.py::OpenAIProvider` (`openai`), selected by `mara/llm/factory.py` |
 
-### Honest status: what has NOT been exercised yet
+### Honest status (updated 2026-10-01)
 
-Everything above exists and is covered by tests, but three things were never run for real.
-Until they are, phrase the resume accordingly or fix them first.
+| Item | Status |
+|---|---|
+| **Gemini** | Exercised live: 16 real research runs, including the 15-question answer eval (coverage 0.96, validity 1.00, judge faithfulness 0.70). |
+| **OpenAI** | Adapter tested only against a stub SDK client; never called live. Say "OpenAI-compatible adapter" if pressed. |
+| **Redis** | Exercised for real against a native Windows Redis 3.0 service (cache, job store, rate limiter), using the RESP2 protocol setting. |
+| **Docker** | `Dockerfile` and `docker-compose.yml` were written but never built or run. Run them once, or drop "Docker" from the resume tech line. |
 
-| Item | Status | What to do |
-|---|---|---|
-| **Gemini / OpenAI** | Adapters tested only against stub SDK clients; no API key was available, so no live call and no real research run has happened. | Put `GEMINI_API_KEY` in `.env`, `make run-local`, `make demo`, then `make eval-answers`; paste the table into the README. Expect to fix small structured-output quirks on the first real call. |
-| **Redis** | All Redis code (cache, job store, rate limiter) is tested with `fakeredis`, not a real server. The app runs without Redis (fail-open cache, in-memory jobs). | Run a local Redis (no Docker needed: Memurai or Redis in WSL on Windows) and start the API; `/health` should show `redis: ok` and `job_store: RedisJobStore`. |
-| **Docker** | `Dockerfile` and `docker-compose.yml` were written but never built or run. | Either run `docker compose up --build` once and fix what breaks, **or drop "Docker" from the resume tech line**. Do not claim it untested. |
-
-Also not claimable yet: any answer-quality number (the eval has not run). The retrieval
-numbers are real.
+Be ready to discuss the 0.70 faithfulness score and the over-eager critic; both are in the
+README's evaluation section with their likely causes.
 
 ### Wording suggestions (defensible today)
 

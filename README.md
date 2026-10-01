@@ -121,8 +121,37 @@ configurations as the result, not the absolute values.
 script reports citation coverage, citation validity (the cited quote occurs verbatim in the
 cited chunk) and an LLM-as-judge faithfulness score that sees only the cited excerpts.
 
-**Not yet run**: it needs an LLM API key, which the build environment did not have. No
-answer-quality numbers are claimed until it has been run.
+Run on 2026-10-01 against the sample corpus with `gemini-2.5-flash`, local embeddings and
+reranking, no web search, `max_loops=1`:
+
+| Metric | Value |
+|---|---|
+| Questions finished | 15 / 15 |
+| Citation coverage (mean) | 0.958 |
+| Citation validity (mean) | 1.000 |
+| Faithfulness, LLM-as-judge (mean) | 0.699 |
+| Sources per answer (mean) | 3.9 |
+| Notes dropped by the quote check (total) | 11 |
+| Runs that used the extra critic round | 13 of 15 |
+| Answers that state a gap explicitly | 11 (designed-in on 1 question) |
+| LLM calls per run (mean) | 8.1 |
+| Tokens per run (mean) | 12,809 |
+| Latency per run (mean) | 43 s |
+
+Reading it honestly:
+- Validity is 1.0 by construction: only notes whose quote was found verbatim reach the writer.
+  The quote check rejected 11 notes across the 15 runs.
+- Coverage of 0.96 means about 1 sentence in 25 was written without a citation.
+- **Faithfulness of 0.70 is the weak number.** The judge sees one excerpt per source (the
+  quote of the first note from that chunk), while the writer saw every claim extracted from
+  it, so sentences resting on a second quote from the same chunk are judged unsupported. Part
+  of the gap is that measurement limit and part is the writer generalising beyond its quotes;
+  the eval does not yet separate the two. Showing the judge all quotes per source is the next
+  fix. The lowest score (0.31) was on the simplest question, answered from only 2 sources.
+- The critic asked for another round in 13 of 15 runs and 11 answers state a gap, which is
+  more than the corpus warrants: the critic prompt is too eager. The unanswerable question
+  (throughput numbers) was correctly answered with "no evidence was found".
+- One model, one run per question, small corpus: treat these as a first measurement.
 
 ## Run it
 
@@ -188,10 +217,9 @@ docs/           ARCHITECTURE.md, DECISIONS.md, LEARNING.md, INTERVIEW.md
 
 ## Limitations
 
-- **Verified by tests and a retrieval eval, not yet by live LLM runs.** The agent flow is
-  covered by scripted-LLM tests and real retrieval; the Gemini/OpenAI adapters are tested
-  against stub clients. Run `make demo` and `make eval-answers` with a key before trusting
-  answer quality.
+- Live runs so far use Gemini only; the OpenAI adapter is tested against a stub client, not
+  the real API.
+- Judge-scored faithfulness is 0.70 and the critic loops too readily (see Evaluation).
 - **`docker compose up` was not executed in the build environment** (no Docker daemon); the
   non-Docker path (`make run-local`) and CI were.
 - Small sample corpus: retrieval numbers are optimistic in absolute terms.
