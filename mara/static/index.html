@@ -3,237 +3,448 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MARA — research assistant</title>
+<title>MARA</title>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2128; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --ok:#16a34a; --warn:#d97706; --bad:#dc2626; }
-  * { box-sizing: border-box; }
-  body { margin:0; font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:var(--ink); background:var(--bg); }
-  header { display:flex; align-items:baseline; gap:16px; padding:14px 24px; background:var(--card); border-bottom:1px solid var(--line); }
-  header h1 { font-size:18px; margin:0; } header .sub { color:var(--muted); font-size:13px; }
-  #health { margin-left:auto; font-size:13px; color:var(--muted); }
-  .chip { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); background:#fafafa; margin-left:6px; }
-  .chip.ok { border-color:var(--ok); color:var(--ok); } .chip.bad { border-color:var(--bad); color:var(--bad); }
-  main { display:grid; grid-template-columns: 380px 1fr; gap:20px; padding:20px 24px; max-width:1400px; margin:0 auto; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:20px; }
-  .card h2 { font-size:14px; margin:0 0 10px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
-  label { display:block; font-size:13px; color:var(--muted); margin:8px 0 4px; }
-  textarea, input[type=text], input[type=date], select { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; font:inherit; }
-  textarea { min-height:70px; resize:vertical; }
-  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; } .row label { margin:0; }
-  .checks label { display:inline-flex; gap:4px; align-items:center; margin-right:10px; color:var(--ink); }
-  button { padding:8px 14px; border:0; border-radius:6px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
-  button.secondary { background:#eef2ff; color:var(--accent); } button:disabled { opacity:.5; cursor:default; }
-  #steps { list-style:none; margin:0; padding:0; font-size:13px; max-height:320px; overflow:auto; }
-  #steps li { padding:5px 0; border-bottom:1px dashed var(--line); display:flex; gap:8px; }
-  .agent { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12px; padding:0 6px; border-radius:4px; background:#eef2ff; color:var(--accent); white-space:nowrap; }
-  .agent.researcher { background:#ecfdf5; color:var(--ok); } .agent.critic { background:#fffbeb; color:var(--warn); } .agent.writer { background:#fdf2f8; color:#be185d; } .agent.orchestrator { background:#f3f4f6; color:var(--muted); }
-  #answer { line-height:1.65; } #answer h1, #answer h2, #answer h3 { font-size:16px; margin:14px 0 6px; } #answer p { margin:8px 0; } #answer ul { padding-left:20px; }
-  #answer code { background:#f3f4f6; padding:0 4px; border-radius:4px; }
-  a.cite { color:var(--accent); text-decoration:none; font-weight:600; font-size:.85em; vertical-align:super; }
-  #sources li { margin:6px 0; padding:6px 8px; border-radius:6px; } #sources li.hi { background:#fef9c3; }
-  #sources .meta { color:var(--muted); font-size:13px; } #sources blockquote { margin:4px 0 0; padding-left:10px; border-left:3px solid var(--line); color:#374151; font-size:13px; }
-  table { border-collapse:collapse; width:100%; font-size:13px; } th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; } th { color:var(--muted); font-weight:600; }
-  td.num { text-align:right; font-variant-numeric: tabular-nums; }
-  details summary { cursor:pointer; color:var(--accent); font-size:13px; margin:6px 0; }
-  .warn { color:var(--warn); font-size:13px; } .err { color:var(--bad); }
-  .muted { color:var(--muted); font-size:13px; }
-  #recent li { cursor:pointer; padding:4px 0; font-size:13px; border-bottom:1px dashed var(--line); } #recent li:hover { color:var(--accent); }
-  .status { font-weight:600; } .status.done { color:var(--ok); } .status.failed { color:var(--bad); } .status.running, .status.pending { color:var(--warn); }
-  pre { white-space:pre-wrap; font-size:12px; background:#f9fafb; padding:8px; border-radius:6px; }
+:root{
+  --bg:#F5F5F7; --surface:#FFFFFF; --surface2:#FBFBFD; --label:#1D1D1F; --label2:#6E6E73; --label3:#A1A1A6;
+  --sep:rgba(60,60,67,.14); --fill:rgba(120,120,128,.12); --fill2:rgba(120,120,128,.2);
+  --accent:#0071E3; --accent-soft:rgba(0,113,227,.12); --red:#D70015; --green:#248A3D; --orange:#B25000;
+  --sidebar:rgba(246,246,248,.72); --shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06);
+  --planner:#5E5CE6; --researcher:#0A84FF; --summarizer:#FF9F0A; --critic:#FF375F; --writer:#30B155; --orchestrator:#8E8E93;
+  --r-s:8px; --r-m:12px; --r-l:18px; --r-xl:26px;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI Variable Text","Segoe UI",system-ui,"Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#000; --surface:#1C1C1E; --surface2:#2C2C2E; --label:#F5F5F7; --label2:#A1A1A6; --label3:#6E6E73;
+  --sep:rgba(84,84,88,.6); --fill:rgba(120,120,128,.24); --fill2:rgba(120,120,128,.36);
+  --accent:#0A84FF; --accent-soft:rgba(10,132,255,.2); --red:#FF453A; --green:#30D158; --orange:#FF9F0A;
+  --sidebar:rgba(28,28,30,.72); --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.4);
+}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font:15px/1.47 var(--font);color:var(--label);background:var(--bg);-webkit-font-smoothing:antialiased;letter-spacing:-.01em}
+button,input,textarea,select{font:inherit;color:inherit;letter-spacing:inherit}
+:focus-visible{outline:3px solid var(--accent-soft);outline-offset:2px;border-radius:6px}
+a{color:var(--accent);text-decoration:none}
+
+/* shell */
+.app{display:grid;grid-template-columns:232px 1fr;height:100vh}
+.sidebar{background:var(--sidebar);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-right:1px solid var(--sep);padding:18px 10px 14px;display:flex;flex-direction:column;gap:2px}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 10px 16px}
+.brand .mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(145deg,#5E5CE6,#0A84FF 55%,#30B155);display:grid;place-items:center;color:#fff;font-weight:700;font-size:14px;box-shadow:inset 0 0 0 .5px rgba(255,255,255,.4)}
+.brand b{font-size:15px;font-weight:600}.brand span{display:block;font-size:11.5px;color:var(--label2);line-height:1.2}
+.nav{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--r-s);color:var(--label);cursor:pointer;border:0;background:none;width:100%;text-align:left;font-size:14px}
+.nav svg{width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.nav:hover{background:var(--fill)}
+.nav[aria-current=page]{background:var(--accent);color:#fff}.nav[aria-current=page] svg{stroke:#fff}
+.nav .count{margin-left:auto;font-size:12px;color:var(--label2);font-variant-numeric:tabular-nums}.nav[aria-current=page] .count{color:rgba(255,255,255,.8)}
+.side-foot{margin-top:auto;padding:10px;font-size:12px;color:var(--label2);display:grid;gap:6px}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--label3);margin-right:7px;vertical-align:1px}
+.dot.ok{background:var(--green)}.dot.bad{background:var(--red)}
+main{overflow:auto;min-width:0}
+.view{display:none;padding:34px 40px 60px;max-width:1180px;margin:0 auto}
+.view.on{display:block}
+h1{font-size:34px;line-height:1.1;font-weight:700;letter-spacing:-.022em;margin:0 0 6px}
+h2{font-size:20px;font-weight:600;letter-spacing:-.017em;margin:30px 0 10px}
+.sub{color:var(--label2);margin:0 0 22px;max-width:62ch}
+.muted{color:var(--label2)}.small{font-size:13px}
+
+/* controls */
+.btn{border:0;border-radius:980px;padding:8px 16px;background:var(--accent);color:#fff;font-weight:500;cursor:pointer;font-size:14px;transition:filter .15s,transform .05s}
+.btn:hover{filter:brightness(1.08)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.4;cursor:default;filter:none}
+.btn.quiet{background:var(--fill);color:var(--accent)}.btn.danger{background:none;color:var(--red);padding:4px 8px}
+.seg{display:inline-flex;background:var(--fill);border-radius:9px;padding:2px;gap:2px}
+.seg button{border:0;background:none;padding:5px 12px;border-radius:7px;font-size:13px;cursor:pointer;color:var(--label)}
+.seg button[aria-pressed=true]{background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04);font-weight:500}
+.switch{position:relative;display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;user-select:none}
+.switch input{position:absolute;opacity:0}
+.switch i{width:38px;height:23px;border-radius:23px;background:var(--fill2);position:relative;transition:background .2s;flex:none}
+.switch i::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s}
+.switch input:checked+i{background:var(--green)}.switch input:checked+i::after{transform:translateX(15px)}
+.switch input:focus-visible+i{outline:3px solid var(--accent-soft)}
+.field{width:100%;border:1px solid var(--sep);background:var(--surface);border-radius:var(--r-m);padding:9px 12px}
+.field:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+
+/* composer: the one bold element */
+.composer{background:var(--surface);border-radius:var(--r-xl);box-shadow:var(--shadow);padding:18px 20px 14px;border:1px solid var(--sep)}
+.composer textarea{width:100%;border:0;outline:0;resize:none;background:none;font-size:21px;line-height:1.35;letter-spacing:-.018em;min-height:62px}
+.composer textarea::placeholder{color:var(--label3)}
+.composer .bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-top:1px solid var(--sep);padding-top:12px;margin-top:6px}
+.chipset{display:flex;gap:6px}
+.chip{border:1px solid var(--sep);background:none;border-radius:980px;padding:4px 11px;font-size:13px;cursor:pointer;color:var(--label2)}
+.chip[aria-pressed=true]{background:var(--accent-soft);border-color:transparent;color:var(--accent);font-weight:500}
+.more{display:none;gap:12px;flex-wrap:wrap;padding-top:12px}.more.on{display:flex}
+.more label{font-size:12.5px;color:var(--label2);display:grid;gap:4px}
+.more .field{padding:6px 10px;font-size:14px;width:auto}
+
+/* lists */
+.group{background:var(--surface);border-radius:var(--r-l);border:1px solid var(--sep);overflow:hidden}
+.item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--sep);min-width:0}
+.item:first-child{border-top:0}
+.item.tap{cursor:pointer}.item.tap:hover{background:var(--fill)}
+.item .t{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .d{color:var(--label2);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .end{margin-left:auto;color:var(--label2);font-size:13px;white-space:nowrap;display:flex;align-items:center;gap:10px}
+.empty{padding:26px 16px;text-align:center;color:var(--label2)}
+.badge{font-size:12px;padding:2px 8px;border-radius:980px;background:var(--fill);color:var(--label2);white-space:nowrap}
+.badge.done{background:rgba(48,177,85,.16);color:var(--green)}.badge.failed{background:rgba(255,69,58,.16);color:var(--red)}
+.badge.running,.badge.pending{background:rgba(255,159,10,.18);color:var(--orange)}
+.kind{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:11px;font-weight:600;color:#fff;flex:none}
+.kind.kb{background:#5E5CE6}.kind.pdf{background:#FF375F}.kind.web{background:#0A84FF}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--sep);border-radius:var(--r-l);overflow:hidden;border:1px solid var(--sep)}
+.stats div{background:var(--surface);padding:14px 16px}
+.stats b{display:block;font-size:24px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stats span{color:var(--label2);font-size:13px}
+.cols{display:grid;grid-template-columns:1.5fr 1fr;gap:26px}
+
+/* research */
+.split{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:22px;margin-top:22px;align-items:start}
+.paper{background:var(--surface);border:1px solid var(--sep);border-radius:var(--r-l);padding:26px 30px;min-height:240px}
+.answer{font-size:16px;line-height:1.62;max-width:68ch}
+.answer h2,.answer h3,.answer h4{font-size:18px;margin:22px 0 6px;font-weight:600}
+.answer p{margin:10px 0}.answer ul{padding-left:20px}.answer code{background:var(--fill);padding:1px 5px;border-radius:5px;font-size:.92em}
+.cite{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;margin:0 1px;border-radius:9px;background:var(--accent-soft);color:var(--accent);font-size:11.5px;font-weight:600;vertical-align:2px;cursor:pointer;border:0}
+.cite:hover{background:var(--accent);color:#fff}
+.meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.inspector{position:sticky;top:20px;display:grid;gap:12px}
+.pane{display:none}.pane.on{display:block}
+.step{display:grid;grid-template-columns:14px 1fr;gap:10px;padding:10px 16px;border-top:1px solid var(--sep);font-size:13.5px}
+.step:first-child{border-top:0}
+.step .pip{width:9px;height:9px;border-radius:50%;margin-top:6px;background:var(--orchestrator)}
+.step b{font-weight:600;text-transform:capitalize}
+.step.new{animation:pop .35s ease-out}
+@keyframes pop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.pip.planner{background:var(--planner)}.pip.researcher{background:var(--researcher)}.pip.summarizer{background:var(--summarizer)}.pip.critic{background:var(--critic)}.pip.writer{background:var(--writer)}
+.src{padding:12px 16px;border-top:1px solid var(--sep);transition:background .3s}
+.src:first-child{border-top:0}.src.hi{background:var(--accent-soft)}
+.src .n{font-weight:600;color:var(--accent);margin-right:6px}
+.src q{display:block;margin-top:6px;color:var(--label2);font-size:13px;border-left:2px solid var(--fill2);padding-left:10px;quotes:"“" "”"}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:8px 12px;border-top:1px solid var(--sep);vertical-align:top}
+th{color:var(--label2);font-weight:500;border-top:0}td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.note{background:rgba(255,159,10,.14);color:var(--orange);border-radius:var(--r-m);padding:10px 14px;font-size:13.5px;margin-bottom:12px}
+.err{color:var(--red)}
+.spinner{width:16px;height:16px;border-radius:50%;border:2px solid var(--fill2);border-top-color:var(--accent);animation:spin .8s linear infinite;display:inline-block;vertical-align:-3px;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.drop{border:1.5px dashed var(--fill2);border-radius:var(--r-l);padding:22px;text-align:center;color:var(--label2);cursor:pointer;background:var(--surface)}
+.drop.over{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,20px);background:rgba(30,30,32,.92);color:#fff;padding:10px 18px;border-radius:980px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;backdrop-filter:blur(12px);z-index:9}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+@media (max-width:1180px){.split{grid-template-columns:1fr}.inspector{position:static}}
+@media (max-width:980px){.cols{grid-template-columns:1fr}}
+@media (max-width:720px){.app{grid-template-columns:1fr;grid-template-rows:1fr auto;height:100dvh}.sidebar{order:2;flex-direction:row;padding:6px;border-right:0;border-top:1px solid var(--sep);justify-content:space-around}.brand,.side-foot,.nav .count{display:none}.nav{flex-direction:column;gap:2px;font-size:10.5px;padding:5px;width:auto}.nav[aria-current=page]{background:none;color:var(--accent)}.nav[aria-current=page] svg{stroke:var(--accent)}.view{padding:22px 16px 40px}h1{font-size:28px}.composer textarea{font-size:18px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
-<header>
-  <h1>MARA</h1><span class="sub">multi-agent research assistant · plan → retrieve → summarize → verify → write</span>
-  <span id="health">checking…</span>
-</header>
-<main>
-  <section>
-    <div class="card">
-      <h2>Ask</h2>
-      <textarea id="question" placeholder="e.g. How does Raft elect a leader, and how does that differ from Paxos?"></textarea>
-      <label>Sources</label>
-      <div class="checks">
-        <label><input type="checkbox" name="src" value="kb" checked> kb</label>
-        <label><input type="checkbox" name="src" value="pdf" checked> pdf</label>
-        <label><input type="checkbox" name="src" value="web" checked> web</label>
-        <label><input type="checkbox" id="websearch"> live web search</label>
+<div class="app">
+  <nav class="sidebar" aria-label="Sections">
+    <div class="brand"><div class="mark">M</div><div><b>MARA</b><span>Research assistant</span></div></div>
+    <button class="nav" data-go="home"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg>Home</button>
+    <button class="nav" data-go="research"><svg viewBox="0 0 24 24"><path d="M12 3l2.2 5.3L20 9l-4.3 3.9L17 19l-5-3-5 3 1.3-6.1L4 9l5.8-.7z"/></svg>Research</button>
+    <button class="nav" data-go="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg>Search</button>
+    <button class="nav" data-go="library"><svg viewBox="0 0 24 24"><path d="M5 4h4v16H5zM10.5 4h4v16h-4zM16 6l3.5-1 3 14-3.5 1z"/></svg>Library<span class="count" id="nav-docs"></span></button>
+    <button class="nav" data-go="runs"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Runs<span class="count" id="nav-runs"></span></button>
+    <div class="side-foot" id="status"><span><i class="dot"></i>Checking status</span></div>
+  </nav>
+
+  <main>
+    <!-- HOME -->
+    <section class="view" id="v-home">
+      <h1>What do you want to understand?</h1>
+      <p class="sub">Ask a question about your documents. MARA breaks it into parts, finds the evidence, and writes an answer where every claim links to its source.</p>
+      <div class="composer" data-composer="home"></div>
+      <h2>Try one of these</h2>
+      <div class="group" id="suggest"></div>
+      <div class="cols">
+        <div><h2>Recent runs</h2><div class="group" id="home-runs"><div class="empty">No runs yet.</div></div></div>
+        <div><h2>Your library</h2><div class="stats" id="home-stats"></div>
+          <p class="small muted" style="margin-top:10px" id="home-models"></p></div>
       </div>
-      <label>Tags (comma-separated, any of)</label><input type="text" id="tags" placeholder="consensus, raft">
+    </section>
+
+    <!-- RESEARCH -->
+    <section class="view" id="v-research">
+      <h1>Research</h1>
+      <p class="sub" id="r-sub">Ask a question, then watch each step as it happens.</p>
+      <div class="composer" data-composer="research"></div>
+      <div class="split">
+        <div>
+          <div class="meta" id="r-meta"></div>
+          <div id="r-notes"></div>
+          <article class="paper"><div class="answer muted" id="r-answer">Your answer appears here, with numbered citations you can select to see the exact quote.</div></article>
+        </div>
+        <aside class="inspector">
+          <div class="seg" id="r-tabs" role="tablist">
+            <button aria-pressed="true" data-pane="steps">Steps</button><button aria-pressed="false" data-pane="sources">Sources</button><button aria-pressed="false" data-pane="plan">Plan</button><button aria-pressed="false" data-pane="trace">Trace</button>
+          </div>
+          <div class="group pane on" id="p-steps"><div class="empty">No steps yet.</div></div>
+          <div class="group pane" id="p-sources"><div class="empty">No sources yet.</div></div>
+          <div class="group pane" id="p-plan"><div class="empty">No plan yet.</div></div>
+          <div class="group pane" id="p-trace"><div class="empty">No trace yet.</div></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- SEARCH -->
+    <section class="view" id="v-search">
+      <h1>Search</h1>
+      <p class="sub">Look through your library directly. This uses the same retrieval as research, without writing an answer.</p>
       <div class="row">
-        <div style="flex:1"><label>Published from</label><input type="date" id="from"></div>
-        <div style="flex:1"><label>to</label><input type="date" id="to"></div>
+        <input class="field grow" id="s-q" placeholder="Search your documents" autocomplete="off">
+        <button class="btn" id="s-go">Search</button>
       </div>
-      <div class="row" style="margin-top:10px">
-        <label>Max critic loops <select id="loops"><option>0</option><option selected>1</option><option>2</option></select></label>
-        <label>Chunks / sub-question <select id="topk"><option>4</option><option selected>6</option><option>8</option></select></label>
+      <div class="row" style="margin-top:14px">
+        <div class="seg" id="s-mode"><button aria-pressed="true" data-v="hybrid">Combined</button><button aria-pressed="false" data-v="bm25">Keywords</button><button aria-pressed="false" data-v="dense">Meaning</button></div>
+        <label class="switch"><input type="checkbox" id="s-rerank" checked><i></i>Rerank results</label>
+        <div class="chipset" id="s-src"></div>
+        <span class="small muted" id="s-info" style="margin-left:auto"></span>
       </div>
-      <div class="row" style="margin-top:12px">
-        <button id="go">Research</button>
-        <button id="searchonly" class="secondary" title="Run only the retrieval pipeline (no LLM needed)">Search only</button>
-        <span id="jobid" class="muted"></span>
+      <h2>Results</h2>
+      <div class="group" id="s-results"><div class="empty">Type a query and select Search.</div></div>
+    </section>
+
+    <!-- LIBRARY -->
+    <section class="view" id="v-library">
+      <h1>Library</h1>
+      <p class="sub">Everything MARA can read: PDFs, web pages, and your notes folder.</p>
+      <div class="cols">
+        <div>
+          <div class="drop" id="l-drop" tabindex="0" role="button">Drop a PDF here, or select to choose a file<input type="file" id="l-file" accept="application/pdf" hidden></div>
+        </div>
+        <div style="display:grid;gap:10px;align-content:start">
+          <div class="row"><input class="field grow" id="l-url" placeholder="https://example.com/article"><button class="btn quiet" id="l-addurl">Add page</button></div>
+          <div class="row"><input class="field grow" id="l-tags" placeholder="Tags for new items, comma-separated"><button class="btn quiet" id="l-kb">Rescan notes folder</button></div>
+        </div>
       </div>
-    </div>
-    <div class="card">
-      <h2>Agent steps (live)</h2>
-      <ul id="steps"><li class="muted">No run yet.</li></ul>
-    </div>
-    <div class="card">
-      <h2>Recent runs</h2>
-      <ul id="recent" style="list-style:none;margin:0;padding:0"><li class="muted">—</li></ul>
-    </div>
-  </section>
-  <section>
-    <div class="card">
-      <h2>Answer <span id="answermeta" class="muted"></span></h2>
-      <div id="answer" class="muted">Ask a question to start a research run, or use “Search only” to inspect retrieval.</div>
-    </div>
-    <div class="card">
-      <h2>Sources</h2>
-      <ol id="sources"></ol>
-    </div>
-    <div class="card">
-      <h2>Trace</h2>
-      <div id="trace" class="muted">—</div>
-    </div>
-  </section>
-</main>
+      <div class="row" style="margin:26px 0 10px">
+        <div class="seg" id="l-filter"><button aria-pressed="true" data-v="">All</button><button aria-pressed="false" data-v="kb">Notes</button><button aria-pressed="false" data-v="pdf">PDFs</button><button aria-pressed="false" data-v="web">Web</button></div>
+        <input class="field" id="l-q" placeholder="Filter by title" style="max-width:260px;margin-left:auto">
+      </div>
+      <div class="group" id="l-list"><div class="empty">Loading.</div></div>
+    </section>
+
+    <!-- RUNS -->
+    <section class="view" id="v-runs">
+      <h1>Runs</h1>
+      <p class="sub">Every question you have asked. Open one to read its answer, sources and full trace.</p>
+      <div class="group" id="runs-list"><div class="empty">No runs yet.</div></div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
 <script>
-const $ = (s) => document.querySelector(s);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let current = null, es = null;
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api=async(path,opt)=>{const r=await fetch(path,opt);const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b.detail||r.statusText);return b};
+const post=(path,body)=>api(path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+const toast=m=>{const t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove("on"),2600)};
+const ago=iso=>{const s=(Date.now()-new Date(iso))/1e3;return s<60?"just now":s<3600?Math.floor(s/60)+" min ago":s<86400?Math.floor(s/3600)+" h ago":new Date(iso).toLocaleDateString()};
+const KIND={kb:"Note",pdf:"PDF",web:"Web"}, PLURAL={kb:"Notes",pdf:"PDFs",web:"Web"};
+const SUGGEST=["How does Raft elect a leader, and how does that differ from Paxos?","Why is two-phase commit a blocking protocol, and how do Spanner and CockroachDB work around it?","Compare LSM trees and B-trees for a write-heavy workload.","What does the CAP theorem actually say, and how is it commonly misread?"];
+let health=null, es=null;
 
-async function loadHealth() {
-  try {
-    const h = await (await fetch("/health")).json();
-    const c = h.checks;
-    $("#health").innerHTML =
-      `LLM <span class="chip ${c.llm.configured ? "ok" : "bad"}">${esc(c.llm.provider)}${c.llm.configured ? "" : " · no key"}</span>` +
-      `corpus <span class="chip">${c.retriever.bm25_documents} chunks</span>` +
-      `rerank <span class="chip">${esc(c.retriever.reranker)}</span>` +
-      `web <span class="chip">${esc(c.research.web_search)}</span>`;
-    $("#go").disabled = !c.research.ready;
-    $("#go").title = c.research.ready ? "" : (c.research.error || "research not available");
-  } catch (e) { $("#health").textContent = "health check failed"; }
+/* ---------- routing ---------- */
+function route(){
+  const [name,id]=(location.hash.replace(/^#\/?/,"")||"home").split("/");
+  const view=$("#v-"+name)?name:"home";
+  $$(".view").forEach(v=>v.classList.toggle("on",v.id==="v-"+view));
+  $$(".nav").forEach(n=>n.toggleAttribute("aria-current",false));
+  const nav=$(`.nav[data-go=${view}]`);nav&&nav.setAttribute("aria-current","page");
+  $("main").scrollTop=0;
+  if(view==="home")loadHome(); if(view==="library")loadLibrary(); if(view==="runs")loadRuns();
+  if(view==="research"&&id)openRun(id);
+}
+$$(".nav").forEach(n=>n.onclick=()=>location.hash="#/"+n.dataset.go);
+addEventListener("hashchange",route);
+
+/* ---------- segmented controls & chips ---------- */
+function seg(el,cb){el.onclick=e=>{const b=e.target.closest("button");if(!b)return;$$("button",el).forEach(x=>x.setAttribute("aria-pressed",x===b));cb&&cb(b.dataset.v??b.dataset.pane)}}
+const segVal=el=>$("button[aria-pressed=true]",el).dataset.v;
+function chips(el,pressed=true){el.innerHTML=["kb","pdf","web"].map(k=>`<button class="chip" aria-pressed="${pressed}" data-v="${k}">${PLURAL[k]}</button>`).join("");el.onclick=e=>{const b=e.target.closest(".chip");if(b)b.setAttribute("aria-pressed",b.getAttribute("aria-pressed")!=="true")}}
+const chipVals=el=>$$(".chip[aria-pressed=true]",el).map(b=>b.dataset.v);
+
+/* ---------- composer (shared by Home and Research) ---------- */
+function composer(host){
+  host.innerHTML=`<textarea rows="2" placeholder="Ask a question about your documents" aria-label="Question"></textarea>
+  <div class="bar"><div class="chipset"></div>
+    <label class="switch"><input type="checkbox" class="web"><i></i>Search the web too</label>
+    <button class="chip opt" aria-pressed="false" type="button">Options</button>
+    <span class="small muted hint" style="margin-left:auto"></span>
+    <button class="btn ask">Research</button></div>
+  <div class="more">
+    <label>Tags<input class="field tags" placeholder="consensus, raft"></label>
+    <label>Published from<input class="field from" type="date"></label>
+    <label>to<input class="field to" type="date"></label>
+    <label>Extra rounds<select class="field loops"><option>0</option><option selected>1</option><option>2</option></select></label>
+    <label>Passages per part<select class="field topk"><option>4</option><option selected>6</option><option>8</option></select></label>
+  </div>`;
+  chips($(".chipset",host));
+  $(".opt",host).onclick=e=>{const on=e.target.getAttribute("aria-pressed")!=="true";e.target.setAttribute("aria-pressed",on);$(".more",host).classList.toggle("on",on)};
+  const ta=$("textarea",host);
+  ta.oninput=()=>{ta.style.height="auto";ta.style.height=Math.min(ta.scrollHeight,220)+"px"};
+  ta.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();ask(host)}};
+  $(".ask",host).onclick=()=>ask(host);
+}
+function readComposer(host){
+  const tags=$(".tags",host).value.split(",").map(t=>t.trim()).filter(Boolean), f={};
+  if(tags.length)f.tags=tags; if($(".from",host).value)f.date_from=$(".from",host).value; if($(".to",host).value)f.date_to=$(".to",host).value;
+  const src=chipVals($(".chipset",host));
+  return {question:$("textarea",host).value.trim(),options:{source_types:src.length&&src.length<3?src:null,filters:Object.keys(f).length?f:null,web_search:$(".web",host).checked,max_loops:+$(".loops",host).value,top_k:+$(".topk",host).value}};
+}
+function gate(){
+  const ok=health?.checks.research.ready;
+  $$(".composer").forEach(h=>{$(".ask",h).disabled=!ok;$(".hint",h).textContent=ok?"Enter to send":"Add an API key to enable research"});
 }
 
-function options() {
-  const src = [...document.querySelectorAll('input[name=src]:checked')].map(i => i.value);
-  const tags = $("#tags").value.split(",").map(t => t.trim()).filter(Boolean);
-  const filters = {};
-  if (tags.length) filters.tags = tags;
-  if ($("#from").value) filters.date_from = $("#from").value;
-  if ($("#to").value) filters.date_to = $("#to").value;
-  return { src, filters: Object.keys(filters).length ? filters : null };
+/* ---------- research ---------- */
+async function ask(host){
+  const body=readComposer(host); if(body.question.length<3)return;
+  if(host.dataset.composer==="home"){const rc=$("[data-composer=research]");$("textarea",rc).value=body.question;history.replaceState(null,"","#/research");route()}
+  resetRun(body.question);
+  try{
+    const {job_id}=await post("/research",body);
+    history.replaceState(null,"","#/research/"+job_id);
+    stream(job_id);
+  }catch(e){$("#r-answer").innerHTML=`<span class="err">${esc(e.message)}</span>`;$("#r-meta").innerHTML=""}
 }
-
-function addStep(agent, message, cls) {
-  const ul = $("#steps");
-  if (ul.firstElementChild?.classList.contains("muted")) ul.innerHTML = "";
-  const li = document.createElement("li");
-  li.innerHTML = `<span class="agent ${esc(agent)}">${esc(agent)}</span><span class="${cls || ""}">${esc(message)}</span>`;
-  ul.appendChild(li); ul.scrollTop = ul.scrollHeight;
+function resetRun(q){
+  if(es){es.close();es=null}
+  $("#r-sub").textContent=q;
+  $("#r-meta").innerHTML=`<span class="badge running"><i class="spinner" style="width:10px;height:10px;border-width:1.5px;margin-right:6px"></i>Working</span>`;
+  $("#r-notes").innerHTML="";$("#r-answer").className="answer muted";$("#r-answer").textContent="Planning the question.";
+  $("#p-steps").innerHTML="";["sources","plan","trace"].forEach(p=>$("#p-"+p).innerHTML=`<div class="empty">Available when the run finishes.</div>`);
+  pane("steps");
 }
-
-async function research() {
-  const question = $("#question").value.trim();
-  if (question.length < 3) return;
-  const o = options();
-  const body = { question, options: { source_types: o.src.length ? o.src : null, filters: o.filters,
-    web_search: $("#websearch").checked, max_loops: +$("#loops").value, top_k: +$("#topk").value } };
-  $("#steps").innerHTML = ""; $("#answer").innerHTML = '<span class="muted">Running…</span>'; $("#sources").innerHTML = ""; $("#trace").textContent = "—";
-  const r = await fetch("/research", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  if (!r.ok) { addStep("error", (await r.json()).detail || r.statusText, "err"); return; }
-  const { job_id } = await r.json();
-  current = job_id; $("#jobid").textContent = "job " + job_id;
-  if (es) es.close();
-  es = new EventSource(`/research/${job_id}/events`);
-  es.addEventListener("step", ev => { const d = JSON.parse(ev.data); addStep(d.agent, d.message); });
-  es.addEventListener("done", async ev => { es.close(); await loadJob(job_id); loadRecent(); });
-  es.onerror = () => { addStep("stream", "connection lost; polling…", "warn"); es.close(); poll(job_id); };
+function addStep(agent,message,fresh){
+  const host=$("#p-steps"), d=document.createElement("div");
+  d.className="step"+(fresh?" new":"");
+  d.innerHTML=`<i class="pip ${esc(agent)}"></i><div><b>${esc(agent)}</b><div class="muted">${esc(message)}</div></div>`;
+  host.appendChild(d);host.scrollTop=host.scrollHeight;
+  const live={planner:"Finding evidence for each part.",researcher:"Reading the evidence.",summarizer:"Checking coverage.",critic:"Writing the answer."}[agent];
+  if(fresh&&live&&$("#r-answer").classList.contains("muted"))$("#r-answer").textContent=live;
 }
-
-async function poll(job_id) {
-  const s = await (await fetch(`/research/${job_id}`)).json();
-  if (s.status === "done" || s.status === "failed") { await loadJob(job_id); loadRecent(); } else setTimeout(() => poll(job_id), 1500);
+function stream(id){
+  es=new EventSource(`/research/${id}/events`);
+  es.addEventListener("step",e=>{const d=JSON.parse(e.data);addStep(d.agent,d.message,true)});
+  es.addEventListener("done",()=>{es.close();es=null;showRun(id);refreshCounts()});
+  es.onerror=()=>{if(es){es.close();es=null;setTimeout(()=>poll(id),1500)}};
 }
-
-function md(text) {
-  const lines = text.split("\n"); let html = "", inList = false;
-  const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\[(\d+)\]/g, (m, n) => `<a class="cite" href="#src-${n}" data-n="${n}">[${n}]</a>`);
-  for (const raw of lines) {
-    const l = raw.trimEnd();
-    const h = l.match(/^(#{1,3})\s+(.*)/);
-    if (h) { if (inList) { html += "</ul>"; inList = false; } html += `<h${h[1].length + 1}>${inline(h[2])}</h${h[1].length + 1}>`; continue; }
-    if (/^\s*[-*]\s+/.test(l)) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${inline(l.replace(/^\s*[-*]\s+/, ""))}</li>`; continue; }
-    if (inList) { html += "</ul>"; inList = false; }
-    if (l.trim()) html += `<p>${inline(l)}</p>`;
+async function poll(id){const s=await api("/research/"+id);(s.status==="done"||s.status==="failed")?showRun(id):setTimeout(()=>poll(id),1500)}
+async function openRun(id){
+  if(es)return;
+  try{const s=await api("/research/"+id);
+    if(s.status==="done"||s.status==="failed")showRun(id,s);else{resetRun(s.question);stream(id)}
+  }catch(e){$("#r-answer").innerHTML=`<span class="err">This run could not be found.</span>`}
+}
+function md(text){
+  const inline=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\[(\d+)\]/g,(m,n)=>`<button class="cite" data-n="${n}" title="Show source ${n}">${n}</button>`);
+  let html="",list=false;
+  for(const raw of text.split("\n")){
+    const l=raw.trimEnd(), h=l.match(/^(#{1,4})\s+(.*)/);
+    if(h){if(list){html+="</ul>";list=false}html+=`<h3>${inline(h[2])}</h3>`;continue}
+    if(/^\s*[-*]\s+/.test(l)){if(!list){html+="<ul>";list=true}html+=`<li>${inline(l.replace(/^\s*[-*]\s+/,""))}</li>`;continue}
+    if(list){html+="</ul>";list=false}
+    if(l.trim())html+=`<p>${inline(l)}</p>`;
   }
-  if (inList) html += "</ul>";
-  return html;
+  return html+(list?"</ul>":"");
+}
+async function showRun(id,s){
+  s=s||await api("/research/"+id);
+  $("#r-sub").textContent=s.question;
+  const calls=s.trace.reduce((a,t)=>a+t.llm_calls,0), secs=s.finished_at?Math.round((new Date(s.finished_at)-new Date(s.created_at))/1e3):null;
+  $("#r-meta").innerHTML=`<span class="badge ${s.status}">${s.status==="done"?"Finished":s.status==="failed"?"Failed":"Working"}</span>`+
+    (s.citation_coverage!=null?`<span class="badge">${Math.round(s.citation_coverage*100)}% of sentences cited</span>`:"")+
+    `<span class="badge">${s.sources.length} sources</span>`+(s.loop?`<span class="badge">${s.loop} extra round</span>`:"")+
+    (secs!=null?`<span class="badge">${secs}s</span>`:"")+`<span class="badge">${calls} model calls</span>`;
+  $("#r-notes").innerHTML=s.warnings.length?`<div class="note">${s.warnings.map(esc).join("<br>")}</div>`:"";
+  const a=$("#r-answer"); a.className="answer";
+  a.innerHTML=s.answer?md(s.answer):`<span class="err">${esc(s.error||"No answer was produced.")}</span>`;
+  $$(".cite",a).forEach(c=>c.onclick=()=>{pane("sources");const el=$("#src-"+c.dataset.n);if(!el)return;$$(".src").forEach(x=>x.classList.remove("hi"));el.classList.add("hi");el.scrollIntoView({behavior:"smooth",block:"center"})});
+  $("#p-sources").innerHTML=s.sources.map(x=>`<div class="src" id="src-${x.n}"><span class="n">${x.n}</span><b>${esc(x.title)}</b>
+    <div class="small muted">${KIND[x.source_type]}${x.page?", page "+x.page:x.section?", "+esc(x.section):""}</div><q>${esc(x.excerpt)}</q></div>`).join("")||`<div class="empty">No sources were used.</div>`;
+  $("#p-plan").innerHTML=s.plan.map(q=>{const n=s.notes.filter(x=>x.sub_question_id===q.id).length,c=(s.evidence[q.id]||[]).length;
+    return `<div class="item" style="align-items:flex-start"><div class="grow"><div style="font-weight:500">${esc(q.text)}</div><div class="d" style="white-space:normal">${q.sources.map(k=>PLURAL[k]).join(", ")}; ${c} passages read, ${n} facts kept</div></div></div>`}).join("")||`<div class="empty">No plan.</div>`;
+  $("#p-trace").innerHTML=`<table><tr><th>Step</th><th>Time</th><th>Calls</th><th>Tokens</th></tr>${s.trace.map(t=>`<tr><td><b style="text-transform:capitalize">${esc(t.agent)}</b>${t.loop?" (round "+(t.loop+1)+")":""}<div class="muted">${t.error?`<span class="err">${esc(t.error)}</span>`:esc(t.output_summary)}</div></td><td class="num">${(t.latency_ms/1e3).toFixed(1)}s</td><td class="num">${t.llm_calls}</td><td class="num">${(t.input_tokens+t.output_tokens).toLocaleString()}</td></tr>`).join("")}</table>`;
+  if(!$("#p-steps").children.length||$("#p-steps .empty")){ $("#p-steps").innerHTML="";
+    const txt=await (await fetch(`/research/${id}/events`)).text();
+    txt.split("\n").forEach(l=>{if(l.startsWith("data: ")){try{const d=JSON.parse(l.slice(6));d.agent&&addStep(d.agent,d.message,false)}catch{}}});}
+}
+function pane(name){$$("#r-tabs button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.pane===name));$$(".pane").forEach(p=>p.classList.toggle("on",p.id==="p-"+name))}
+seg($("#r-tabs"),pane);
+
+/* ---------- home ---------- */
+function runRow(j){return `<div class="item tap" data-run="${esc(j.job_id)}"><div class="grow"><div class="t">${esc(j.question)}</div><div class="d">${ago(j.created_at)}, ${j.n_sources} sources</div></div><div class="end"><span class="badge ${j.status}">${j.status==="done"?"Finished":j.status==="failed"?"Failed":"Working"}</span></div></div>`}
+function bindRuns(root){$$("[data-run]",root).forEach(r=>r.onclick=()=>{if(es){es.close();es=null}location.hash="#/research/"+r.dataset.run})}
+async function loadHome(){
+  $("#suggest").innerHTML=SUGGEST.map(q=>`<div class="item tap" data-q="${esc(q)}"><div class="t" style="font-weight:400">${esc(q)}</div></div>`).join("");
+  $$("#suggest [data-q]").forEach(i=>i.onclick=()=>{const ta=$("[data-composer=home] textarea");ta.value=i.dataset.q;ta.focus();ta.oninput()});
+  try{const runs=await api("/research?limit=5");$("#home-runs").innerHTML=runs.map(runRow).join("")||`<div class="empty">No runs yet. Ask your first question above.</div>`;bindRuns($("#home-runs"))}
+  catch{$("#home-runs").innerHTML=`<div class="empty">Runs appear here once research is enabled.</div>`}
+  try{const docs=await api("/documents");const by=k=>docs.filter(d=>d.source_type===k).length;
+    $("#home-stats").innerHTML=[[docs.length,"Documents"],[by("kb"),"Notes"],[by("pdf"),"PDFs"],[by("web"),"Web pages"]].map(([n,l])=>`<div><b>${n}</b><span>${l}</span></div>`).join("")}catch{}
 }
 
-async function loadJob(job_id) {
-  const s = await (await fetch(`/research/${job_id}`)).json();
-  current = job_id; $("#jobid").textContent = "job " + job_id;
-  $("#answermeta").innerHTML = ` · <span class="status ${s.status}">${s.status}</span>` +
-    (s.citation_coverage != null ? ` · citation coverage ${(s.citation_coverage * 100).toFixed(0)}%` : "") +
-    (s.loop ? ` · ${s.loop} extra loop` : "");
-  $("#answer").innerHTML = s.answer ? md(s.answer) : `<span class="err">${esc(s.error || "no answer")}</span>`;
-  $("#sources").innerHTML = s.sources.map(src => {
-    const where = src.page ? `p. ${src.page}` : (src.section || "");
-    return `<li id="src-${src.n}"><b>[${src.n}]</b> ${esc(src.title)} <span class="meta">· ${esc(src.source_type)}${where ? " · " + esc(where) : ""} · ${esc(src.url_or_path)}</span>
-      <blockquote>“${esc(src.excerpt)}”</blockquote></li>`; }).join("") || '<li class="muted">none</li>';
-  document.querySelectorAll("a.cite").forEach(a => a.onclick = (e) => {
-    e.preventDefault(); const li = $("#src-" + a.dataset.n); if (!li) return;
-    document.querySelectorAll("#sources li").forEach(x => x.classList.remove("hi")); li.classList.add("hi"); li.scrollIntoView({ behavior: "smooth", block: "center" });
-  });
-  renderTrace(s);
-  if (s.status === "done" || s.status === "failed") { $("#steps").innerHTML = ""; (await (await fetch(`/research/${job_id}/events`)).text()).split("\n").forEach(line => {
-    if (line.startsWith("data: ")) { try { const d = JSON.parse(line.slice(6)); if (d.agent) addStep(d.agent, d.message); } catch {} } }); }
+/* ---------- search ---------- */
+chips($("#s-src")); seg($("#s-mode"));
+async function runSearch(){
+  const q=$("#s-q").value.trim(); if(!q)return;
+  const src=chipVals($("#s-src"));
+  $("#s-results").innerHTML=`<div class="empty"><i class="spinner"></i>Searching</div>`;$("#s-info").textContent="";
+  try{
+    const r=await post("/search",{query:q,filters:src.length&&src.length<3?{source_types:src}:null,config:{mode:segVal($("#s-mode")),rerank:$("#s-rerank").checked,top_k:10}});
+    $("#s-info").textContent=`${r.chunks.length} results in ${r.latency_ms<1000?Math.round(r.latency_ms)+" ms":(r.latency_ms/1e3).toFixed(1)+" s"}`;
+    $("#s-results").innerHTML=r.chunks.map(c=>`<div class="item" style="align-items:flex-start"><div class="kind ${c.chunk.source_type}">${KIND[c.chunk.source_type]}</div><div class="grow"><div class="t">${esc(c.chunk.title)}</div><div class="d">${c.chunk.page?"Page "+c.chunk.page:esc(c.chunk.section||c.chunk.url_or_path)}</div><div class="small" style="margin-top:6px;color:var(--label2);white-space:normal">${esc(c.chunk.text.slice(0,320))}${c.chunk.text.length>320?"…":""}</div></div><div class="end">${r.rerank?Math.round(c.score*100)+"% match":"#"+c.rank}</div></div>`).join("")||`<div class="empty">Nothing matched. Try different words or include more sources.</div>`;
+  }catch(e){$("#s-results").innerHTML=`<div class="empty err">${esc(e.message)}</div>`}
+}
+$("#s-go").onclick=runSearch; $("#s-q").onkeydown=e=>{if(e.key==="Enter")runSearch()};
+
+/* ---------- library ---------- */
+let docs=[];
+async function loadLibrary(){try{docs=await api("/documents");drawLibrary();refreshCounts()}catch(e){$("#l-list").innerHTML=`<div class="empty err">${esc(e.message)}</div>`}}
+function drawLibrary(){
+  const k=segVal($("#l-filter")), q=$("#l-q").value.toLowerCase();
+  const rows=docs.filter(d=>(!k||d.source_type===k)&&(!q||d.title.toLowerCase().includes(q)));
+  $("#l-list").innerHTML=rows.map(d=>`<div class="item"><div class="kind ${d.source_type}">${KIND[d.source_type]}</div><div class="grow"><div class="t">${esc(d.title)}</div><div class="d">${d.pages?d.pages+" pages, ":""}${d.n_chunks} passages${d.tags.length?", tagged "+d.tags.map(esc).join(", "):""}</div></div><div class="end">${ago(d.ingested_at)}<button class="btn danger" data-del="${esc(d.doc_id)}" aria-label="Remove ${esc(d.title)}">Remove</button></div></div>`).join("")||`<div class="empty">${docs.length?"Nothing matches this filter.":"Your library is empty. Add a PDF, a web page, or rescan your notes folder."}</div>`;
+  $$("[data-del]").forEach(b=>b.onclick=async()=>{if(!confirm("Remove this document from the library?"))return;await api("/documents/"+b.dataset.del,{method:"DELETE"});toast("Removed");loadLibrary()});
+}
+seg($("#l-filter"),drawLibrary); $("#l-q").oninput=drawLibrary;
+const tagStr=()=>$("#l-tags").value;
+const said=r=>({ingested:"Added",replaced:"Replaced",skipped_duplicate:"Already in your library",empty:"No readable text found"}[r.status]||r.status);
+async function addPdf(file){
+  if(!file)return; const fd=new FormData();fd.append("file",file);if(tagStr())fd.append("tags",tagStr());
+  $("#l-drop").firstChild.textContent="Adding "+file.name+" ";
+  try{const r=await fetch("/ingest/pdf",{method:"POST",body:fd});const b=await r.json();if(!r.ok)throw new Error(b.detail);toast(`${said(b)}: ${b.title}`);loadLibrary()}
+  catch(e){toast(e.message)}finally{$("#l-drop").firstChild.textContent="Drop a PDF here, or select to choose a file"}
+}
+const drop=$("#l-drop");drop.onclick=()=>$("#l-file").click();drop.onkeydown=e=>{if(e.key==="Enter"||e.key===" ")$("#l-file").click()};
+$("#l-file").onchange=e=>addPdf(e.target.files[0]);
+["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over")}));
+drop.addEventListener("drop",e=>addPdf(e.dataTransfer.files[0]));
+$("#l-addurl").onclick=async()=>{const u=$("#l-url").value.trim();if(!u)return;toast("Fetching the page");
+  try{const b=await post("/ingest/url",{urls:[u],tags:tagStr().split(",").map(t=>t.trim()).filter(Boolean)});const err=Object.values(b.errors)[0];toast(err||`${said(b.results[0])}: ${b.results[0].title}`);if(!err){$("#l-url").value="";loadLibrary()}}catch(e){toast(e.message)}};
+$("#l-kb").onclick=async()=>{toast("Scanning notes");try{const b=await api("/ingest/kb",{method:"POST"});const n=b.results.filter(r=>r.status==="ingested").length;toast(n?`Added ${n} notes`:"Notes are up to date");loadLibrary()}catch(e){toast(e.message)}};
+
+/* ---------- runs ---------- */
+async function loadRuns(){try{const runs=await api("/research?limit=50");$("#runs-list").innerHTML=runs.map(runRow).join("")||`<div class="empty">No runs yet. Ask a question from Home.</div>`;bindRuns($("#runs-list"));$("#nav-runs").textContent=runs.length||""}
+  catch{$("#runs-list").innerHTML=`<div class="empty">Runs appear here once research is enabled.</div>`}}
+
+/* ---------- status ---------- */
+async function refreshCounts(){try{const d=await api("/documents");$("#nav-docs").textContent=d.length||""}catch{} try{const r=await api("/research?limit=50");$("#nav-runs").textContent=r.length||""}catch{}}
+async function loadHealth(){
+  try{health=await api("/health");const c=health.checks;
+    $("#status").innerHTML=`<span><i class="dot ${c.llm.configured?"ok":"bad"}"></i>${c.llm.configured?"Research ready":"No API key"}</span><span><i class="dot ${c.retriever.ready?"ok":"bad"}"></i>${c.retriever.bm25_documents.toLocaleString()} passages indexed</span><span><i class="dot ${c.redis==="ok"?"ok":""}"></i>${c.redis==="ok"?"History saved":"History in memory"}</span>`;
+    $("#home-models").textContent=`${c.retriever.bm25_documents.toLocaleString()} passages indexed. Answers by ${c.llm.provider==="gemini"?"Gemini":"OpenAI"}; search runs on this computer.`;
+  }catch{$("#status").innerHTML=`<span><i class="dot bad"></i>Server not reachable</span>`}
+  gate();
 }
 
-function renderTrace(s) {
-  const plan = s.plan.map(q => `<tr><td>${esc(q.id)}</td><td>${esc(q.text)}</td><td>${esc(q.sources.join(", "))}</td><td class="num">${(s.evidence[q.id] || []).length}</td><td class="num">${s.notes.filter(n => n.sub_question_id === q.id).length}</td></tr>`).join("");
-  const steps = s.trace.map(t => `<tr><td><span class="agent ${esc(t.agent)}">${esc(t.agent)}</span></td><td class="num">${t.loop}</td><td class="num">${(t.latency_ms / 1000).toFixed(1)}s</td><td class="num">${t.llm_calls}</td><td class="num">${t.input_tokens + t.output_tokens}</td><td class="num">${t.cache_hits}</td><td>${t.error ? `<span class="err">${esc(t.error)}</span>` : esc(t.output_summary)}</td></tr>`).join("");
-  const crit = s.critique ? `<p class="muted">Critic: covered ${s.critique.covered.length}, gaps ${s.critique.gaps.length}, conflicts ${s.critique.conflicts.length}, new sub-questions ${s.critique.new_sub_questions.length}</p>` +
-    (s.critique.gaps.length ? `<ul class="warn">${s.critique.gaps.map(g => `<li>${esc(g.sub_question_id)}: ${esc(g.reason)}</li>`).join("")}</ul>` : "") +
-    (s.critique.conflicts.length ? `<ul class="warn">${s.critique.conflicts.map(c => `<li>${esc(c.claim_a)} ↔ ${esc(c.claim_b)}: ${esc(c.note)}</li>`).join("")}</ul>` : "") : "";
-  const warns = s.warnings.length ? `<details><summary>${s.warnings.length} warning(s)</summary><ul class="warn">${s.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></details>` : "";
-  const total = s.trace.reduce((a, t) => a + t.llm_calls, 0), tokens = s.trace.reduce((a, t) => a + t.input_tokens + t.output_tokens, 0);
-  $("#trace").innerHTML = `<p class="muted">${s.trace.length} steps · ${total} LLM calls · ${tokens} tokens · ${s.trace.reduce((a, t) => a + t.cache_hits, 0)} cache hits</p>
-    <details open><summary>Plan &amp; evidence</summary><table><tr><th>id</th><th>sub-question</th><th>sources</th><th>chunks</th><th>notes</th></tr>${plan}</table></details>
-    ${crit}
-    <details open><summary>Steps</summary><table><tr><th>agent</th><th>loop</th><th>latency</th><th>calls</th><th>tokens</th><th>cached</th><th>result</th></tr>${steps}</table></details>
-    ${warns}
-    <details><summary>Raw state (JSON)</summary><pre>${esc(JSON.stringify(s, null, 2))}</pre></details>`;
-}
-
-async function loadRecent() {
-  try {
-    const jobs = await (await fetch("/research?limit=10")).json();
-    $("#recent").innerHTML = jobs.map(j => `<li data-id="${esc(j.job_id)}"><span class="status ${j.status}">${j.status}</span> · ${esc(j.question)} <span class="muted">(${j.n_sources} sources)</span></li>`).join("") || '<li class="muted">—</li>';
-    document.querySelectorAll("#recent li[data-id]").forEach(li => li.onclick = () => loadJob(li.dataset.id));
-  } catch { $("#recent").innerHTML = '<li class="muted">unavailable</li>'; }
-}
-
-async function searchOnly() {
-  const query = $("#question").value.trim(); if (!query) return;
-  const o = options();
-  const body = { query, filters: Object.assign({ source_types: o.src.length ? o.src : null }, o.filters || {}), config: { top_k: 8 } };
-  $("#answer").innerHTML = '<span class="muted">Searching…</span>'; $("#sources").innerHTML = ""; $("#trace").textContent = "—"; $("#answermeta").textContent = "";
-  const r = await fetch("/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  if (!r.ok) { $("#answer").innerHTML = `<span class="err">${esc((await r.json()).detail || r.statusText)}</span>`; return; }
-  const res = await r.json();
-  $("#answer").innerHTML = `<p class="muted">Retrieval only (${esc(res.mode)}${res.rerank ? " + rerank" : ""}, score = ${esc(res.score_kind)}, ${res.latency_ms.toFixed(0)} ms; stages: ${esc(JSON.stringify(res.stage_counts))})</p>`;
-  $("#sources").innerHTML = res.chunks.map(c => `<li><b>#${c.rank}</b> ${esc(c.chunk.title)} <span class="meta">· ${esc(c.chunk.source_type)}${c.chunk.page ? " · p. " + c.chunk.page : (c.chunk.section ? " · " + esc(c.chunk.section) : "")} · score ${c.score.toFixed(3)}</span><blockquote>${esc(c.chunk.text.slice(0, 400))}${c.chunk.text.length > 400 ? "…" : ""}</blockquote></li>`).join("") || '<li class="muted">no results</li>';
-}
-
-$("#go").onclick = research; $("#searchonly").onclick = searchOnly;
-$("#question").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) research(); });
-loadHealth(); loadRecent(); setInterval(loadHealth, 30000);
+$$("[data-composer]").forEach(composer);
+loadHealth().then(route); refreshCounts(); setInterval(loadHealth,30000);
 </script>
 </body>
 </html>
