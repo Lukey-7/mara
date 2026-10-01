@@ -8,6 +8,14 @@ dense + cross-encoder reranking) over PDFs, web pages and an internal knowledge 
 summarises it into evidence notes that must quote their source verbatim, checks coverage,
 and writes the answer.
 
+![A MARA answer: the question as title, the five-stage track, the cited answer, and sources in the margin with the quoted sentence highlighted](docs/img/answer.png)
+
+<details><summary>The Ask screen</summary>
+
+![The Ask screen: a question box, suggested questions, recent answers and library counts](docs/img/ask.png)
+
+</details>
+
 ## The problem
 
 A single "stuff everything into one prompt" call cannot show where a claim came from, and a
