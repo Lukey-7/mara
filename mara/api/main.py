@@ -32,7 +32,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         logging.basicConfig(level=settings.log_level)
         st = app.state
         st.settings = settings
-        st.redis = redis.Redis.from_url(settings.redis_url)
+        st.redis = redis.Redis.from_url(settings.redis_url, protocol=settings.redis_protocol)
         st.rate_limiter = (
             RateLimiter(st.redis, settings.api_rate_limit_per_minute)
             if settings.api_rate_limit_per_minute > 0

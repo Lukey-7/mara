@@ -19,7 +19,7 @@ TOPICS = {"raft": 0, "paxos": 1, "cap": 2, "cooking": 3}
 def make_client(monkeypatch, tmp_path) -> Callable[..., TestClient]:
     """make_client(**settings_overrides, llm=FakeLLM(...)) -> TestClient (use as a context
     manager so the lifespan runs). Chroma is embedded under tmp_path; the reranker is off."""
-    monkeypatch.setattr(main.redis.Redis, "from_url", lambda url: fakeredis.FakeAsyncRedis())
+    monkeypatch.setattr(main.redis.Redis, "from_url", lambda url, **kw: fakeredis.FakeAsyncRedis())
 
     def make(llm: FakeLLM | None = None, **overrides) -> TestClient:
         llm = llm or FakeLLM(embedder=topic_embedder(TOPICS))

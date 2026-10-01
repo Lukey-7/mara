@@ -87,6 +87,9 @@ class Settings(BaseSettings):
 
     # --- Infrastructure ---
     redis_url: str = "redis://localhost:6379/0"
+    # 2 = RESP2, understood by every Redis version (native Windows builds are 3.x and reject
+    # the RESP3 HELLO handshake); nothing here needs RESP3 features.
+    redis_protocol: int = 2
     chroma_host: str = "localhost"
     chroma_port: int = 8000
     chroma_collection: str = "mara_chunks"
