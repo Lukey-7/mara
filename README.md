@@ -96,7 +96,7 @@ flowchart TD
 | **ChromaDB** | persistent vector store with metadata filtering, shared by both frameworks (one chunk schema: `mara/core/schema.py`) |
 | **Redis** | LLM / embedding / web-search cache with TTLs, research-job state and event log |
 | **FastAPI** | REST API, SSE progress stream, the single-page UI |
-| **Gemini / OpenAI** | generation behind one `LLMProvider` protocol (structured JSON output, validated) |
+| **Gemini / OpenAI** | generation behind one `LLMProvider` protocol (structured JSON output, validated); reasoning effort configurable for OpenAI reasoning models |
 | **sentence-transformers** | local embeddings (`bge-small-en-v1.5`) and cross-encoder reranking on a laptop CPU |
 | **Docker Compose** | `api` + `redis` + `chroma` |
 
@@ -125,41 +125,55 @@ configurations as the result, not the absolute values.
 
 ### Answer quality (`make eval-answers`)
 
-`eval/answer_eval.json` has 15 research questions (one deliberately unanswerable). The
-script reports citation coverage, citation validity (the cited quote occurs verbatim in the
-cited chunk) and an LLM-as-judge faithfulness score that sees only the cited excerpts.
+`eval/answer_eval.json` has 15 research questions over the sample corpus (one deliberately
+unanswerable). Each finished answer is scored on:
 
-Run on 2026-10-01 against the sample corpus with `gemini-2.5-flash`, local embeddings and
-reranking, no web search, `max_loops=1`:
+- **citation coverage**: share of factual sentences carrying a `[n]` citation;
+- **citation validity**: the cited quote occurs verbatim in the cited chunk;
+- **faithfulness**: an LLM judge sees only the answer and the quotes behind its citations
+  and grades each sentence as supported, partly supported or unsupported.
 
-| Metric | Value |
-|---|---|
-| Questions finished | 15 / 15 |
-| Citation coverage (mean) | 0.958 |
-| Citation validity (mean) | 1.000 |
-| Faithfulness, LLM-as-judge (mean) | 0.699 |
-| Sources per answer (mean) | 3.9 |
-| Notes dropped by the quote check (total) | 11 |
-| Runs that used the extra critic round | 13 of 15 |
-| Answers that state a gap explicitly | 11 (designed-in on 1 question) |
-| LLM calls per run (mean) | 8.1 |
-| Tokens per run (mean) | 12,809 |
-| Latency per run (mean) | 43 s |
+Run 2026-10-03, same corpus, local embeddings and reranking, no web search, at most one extra
+research round. All three runs are scored by the same judge (Gemini 2.5 Flash) so the columns
+are comparable.
 
-Reading it honestly:
-- Validity is 1.0 by construction: only notes whose quote was found verbatim reach the writer.
-  The quote check rejected 11 notes across the 15 runs.
-- Coverage of 0.96 means about 1 sentence in 25 was written without a citation.
-- **Faithfulness of 0.70 is the weak number.** The judge sees one excerpt per source (the
-  quote of the first note from that chunk), while the writer saw every claim extracted from
-  it, so sentences resting on a second quote from the same chunk are judged unsupported. Part
-  of the gap is that measurement limit and part is the writer generalising beyond its quotes;
-  the eval does not yet separate the two. Showing the judge all quotes per source is the next
-  fix. The lowest score (0.31) was on the simplest question, answered from only 2 sources.
-- The critic asked for another round in 13 of 15 runs and 11 answers state a gap, which is
-  more than the corpus warrants: the critic prompt is too eager. The unanswerable question
-  (throughput numbers) was correctly answered with "no evidence was found".
-- One model, one run per question, small corpus: treat these as a first measurement.
+| | Gemini 2.5 Flash | gpt-6-luna, low thinking | gpt-6-luna, medium thinking |
+|---|---|---|---|
+| Questions finished | 15 / 15 | 15 / 15 | 15 / 15 |
+| Citation coverage | 0.963 | 0.859 | **0.967** |
+| Citation validity | 1.000 | 1.000 | 1.000 |
+| Faithfulness (judge) | 0.897 | 0.913 | **0.960** |
+| Sources per answer | 3.6 | 2.9 | 2.9 |
+| Notes rejected by the quote check | 6 | 0 | 2 |
+| Runs with an extra research round | 5 | 2 | 2 |
+| Answers that state a gap | 5 | 6 | 3 |
+| Model calls per run | 6.9 | 5.9 | 6.1 |
+| Tokens per run | 10,379 | 6,707 | 7,512 |
+| Time per run | 25 s | 19 s | 20 s |
+
+What the numbers say:
+
+- **gpt-6-luna with medium thinking is the most faithful** (0.96) with full citation
+  coverage, at fewer tokens than Gemini. Low thinking saves about 10% of tokens but leaves
+  more sentences uncited (0.86): it tends to put one citation at the end of a paragraph.
+- **Validity is 1.0 for every model by construction**: only notes whose quote is found
+  verbatim in the source reach the writer.
+- **The unanswerable question** (throughput numbers) was answered with "no evidence was found"
+  by all three, instead of an invented figure.
+
+How the numbers got here (the first run was worse, and why):
+
+| Change | Gemini before | Gemini after |
+|---|---|---|
+| Judge sees every quote behind a citation, not just the first | faithfulness 0.70 | 0.90 |
+| Extra research round only when a part has no evidence at all | 13 / 15 runs looped | 5 / 15 |
+| (consequence) | 8.1 calls, 43 s per run | 6.9 calls, 25 s |
+
+The coverage metric also had to learn that some models put the citation after the full stop
+("…a majority. [1]"); before that fix gpt-6-luna scored 0.55–0.62 on coverage for answers
+that were in fact cited. Citations are now normalised in the answer itself, so they also
+render consistently. One run per question on a small corpus: treat these as a first
+measurement, not a benchmark.
 
 ## Run it
 
@@ -225,9 +239,8 @@ docs/           ARCHITECTURE.md, DECISIONS.md, LEARNING.md, INTERVIEW.md
 
 ## Limitations
 
-- Live runs so far use Gemini only; the OpenAI adapter is tested against a stub client, not
-  the real API.
-- Judge-scored faithfulness is 0.70 and the critic loops too readily (see Evaluation).
+- Faithfulness is judged by another LLM (Gemini); it is a model output, noisy at 15
+  questions, and reported next to the deterministic coverage and validity checks.
 - **`docker compose up` was not executed in the build environment** (no Docker daemon); the
   non-Docker path (`make run-local`) and CI were.
 - Small sample corpus: retrieval numbers are optimistic in absolute terms.

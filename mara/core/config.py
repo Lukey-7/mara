@@ -25,6 +25,9 @@ class Settings(BaseSettings):
 
     openai_api_key: SecretStr | None = None
     openai_model: str = "gpt-5.4-mini"
+    # Reasoning models only: how much hidden thinking to spend per call (none, minimal, low,
+    # medium, high, xhigh, max). Left unset for models that do not take it.
+    openai_reasoning_effort: str | None = None
     openai_embedding_model: str = "text-embedding-3-small"
 
     # --- Embeddings: local by default so ingestion + search need no key and no rate limit ---

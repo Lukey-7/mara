@@ -54,13 +54,15 @@
 
 | Item | Status |
 |---|---|
-| **Gemini** | Exercised live: 16 real research runs, including the 15-question answer eval (coverage 0.96, validity 1.00, judge faithfulness 0.70). |
-| **OpenAI** | Adapter tested only against a stub SDK client; never called live. Say "OpenAI-compatible adapter" if pressed. |
+| **Gemini** | Exercised live: two full 15-question answer evals and demo runs. After the judge and critic fixes: coverage 0.96, validity 1.00, faithfulness 0.90. |
+| **OpenAI** | Exercised live: full 15-question evals on gpt-6-luna at low and medium reasoning effort (medium: coverage 0.97, validity 1.00, faithfulness 0.96), plus embeddings. |
 | **Redis** | Exercised for real against a native Windows Redis 3.0 service (cache, job store, rate limiter), using the RESP2 protocol setting. |
 | **Docker** | `Dockerfile` and `docker-compose.yml` were written but never built or run. Run them once, or drop "Docker" from the resume tech line. |
 
-Be ready to discuss the 0.70 faithfulness score and the over-eager critic; both are in the
-README's evaluation section with their likely causes.
+Be ready to discuss what moved the numbers: the judge was first shown one quote per source
+(faithfulness 0.70 → 0.90 once it saw all of them), the critic looped on thin evidence (13 → 5
+runs), and the coverage metric missed citations placed after the full stop. Each was a
+measurement or control-flow bug found by reading traces, not by tuning prompts.
 
 ### Wording suggestions (defensible today)
 

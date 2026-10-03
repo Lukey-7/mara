@@ -185,3 +185,19 @@ def test_factory_stacks_cache_outside_resilience():
     assert isinstance(llm.inner, ResilientLLM)
     assert isinstance(llm.inner.inner, CompositeProvider)
     assert llm.inner._embedding_limiter is not None  # API embeddings are rate limited
+
+
+async def test_openai_reasoning_model_gets_effort_and_no_temperature():
+    sink: list[dict] = []
+    resp = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+    )
+    p = openai_with(create=async_returning(resp, sink=sink))
+    p.reasoning_effort = "low"
+    await p.generate("q", temperature=0.2)
+    assert sink[0]["reasoning_effort"] == "low" and "temperature" not in sink[0]
+
+    p.reasoning_effort = None
+    await p.generate("q", temperature=0.2)
+    assert sink[1]["temperature"] == 0.2 and "reasoning_effort" not in sink[1]

@@ -44,7 +44,9 @@ class Writer:
         )
         out = await self._llm.call(prompt, WriterOutput, step)
 
-        answer, invalid = drop_invalid_citations(out.answer, len(state.sources))
+        answer, invalid = drop_invalid_citations(
+            attach_trailing_citations(out.answer), len(state.sources)
+        )
         if invalid:
             state.warnings.append(f"writer: removed citations to unknown sources {sorted(invalid)}")
         state.answer = answer
@@ -95,10 +97,21 @@ def drop_invalid_citations(answer: str, n_sources: int) -> tuple[str, set[int]]:
     return re.sub(r"[ \t]+([.,;:!?])", r"\1", cleaned), invalid
 
 
+_TRAILING_CITES = re.compile(r"([.!?])((?:\s*\[\d+\])+)")
+
+
+def attach_trailing_citations(text: str) -> str:
+    """Move citations written after the full stop ("...majority. [1]") to before it
+    ("...majority [1]."). Models differ on this; normalising keeps each citation with the
+    sentence it supports, for display and for the coverage metric."""
+    return _TRAILING_CITES.sub(lambda m: " " + " ".join(m.group(2).split()) + m.group(1), text)
+
+
 def citation_coverage(answer: str) -> float:
     """Share of sentences that carry a [n] citation. Headings, bullets that are only labels
     and very short fragments are skipped; a sentence that admits missing evidence counts as
     covered (it is the honest alternative to a citation)."""
+    answer = attach_trailing_citations(answer)
     sentences = [
         s.strip()
         for para in answer.splitlines()

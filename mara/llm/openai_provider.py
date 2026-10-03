@@ -28,8 +28,10 @@ class OpenAIProvider:
         embedding_dimensions: int | None = None,
         timeout_s: float = 60.0,
         client: openai.AsyncOpenAI | None = None,  # injectable for tests
+        reasoning_effort: str | None = None,
     ) -> None:
         self.model = model
+        self.reasoning_effort = reasoning_effort
         self.embedding_model = embedding_model
         self.embedding_dimensions = embedding_dimensions
         # max_retries=0: ResilientLLM owns retries, so they are not stacked twice.
@@ -52,9 +54,11 @@ class OpenAIProvider:
         messages.append({"role": "user", "content": prompt})
 
         kwargs: dict = {"model": self.model, "messages": messages}
-        # Omit rather than send defaults: some models (e.g. reasoning models) reject
-        # a non-default temperature.
-        if temperature is not None:
+        # Reasoning models (configured with a reasoning effort) reject any temperature other
+        # than the default, so it is only sent to non-reasoning models, and only if set.
+        if self.reasoning_effort:
+            kwargs["reasoning_effort"] = self.reasoning_effort
+        elif temperature is not None:
             kwargs["temperature"] = temperature
         if max_tokens is not None:
             kwargs["max_completion_tokens"] = max_tokens

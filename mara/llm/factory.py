@@ -51,6 +51,7 @@ def _build_vendor(vendor: str, settings: Settings):  # noqa: ANN202 - Gemini | O
             embedding_model=settings.openai_embedding_model,
             embedding_dimensions=settings.embedding_dimensions,
             timeout_s=settings.llm_timeout_s,
+            reasoning_effort=settings.openai_reasoning_effort,
         )
     raise ValueError(f"unknown provider: {vendor}")
 

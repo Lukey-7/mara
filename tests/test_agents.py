@@ -257,3 +257,15 @@ async def test_web_search_failure_is_a_warning_and_run_continues():
     state = await make_orchestrator(llm, web=BrokenSearch(), ingest=object()).run(state)  # type: ignore[arg-type]
     assert state.status == "done"
     assert any("web search failed" in w and "internal corpus" in w for w in state.warnings)
+
+
+def test_citations_after_the_full_stop_count_for_their_sentence():
+    from mara.agents.writer import attach_trailing_citations
+
+    trailing = "Raft elects one leader per term. [1] A majority must vote for the candidate. [1][2]"
+    assert attach_trailing_citations(trailing) == (
+        "Raft elects one leader per term [1]. A majority must vote for the candidate [1][2]."
+    )
+    assert citation_coverage(trailing) == 1.0
+    # a citation only after the second sentence still leaves the first one uncited
+    assert citation_coverage("Raft elects one leader per term. A majority must vote. [1]") == 0.5
