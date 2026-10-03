@@ -1,6 +1,6 @@
 You are grading the faithfulness of a research answer. You are given the question, the
 answer (markdown with [n] citations), and the ONLY evidence the writer was allowed to use:
-the excerpts behind each citation number.
+the excerpts behind each citation number (a source may have several excerpts).
 
 Go through the answer sentence by sentence (ignore headings and the "Limitations" line) and
 classify each sentence:

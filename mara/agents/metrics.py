@@ -62,7 +62,17 @@ class JudgeVerdict(BaseModel):
 async def judge_faithfulness(llm: StructuredLLM, state: ResearchState) -> JudgeVerdict:
     """The judge sees only the answer and the excerpts behind its citations: it cannot use
     world knowledge to excuse an unsupported claim."""
-    sources = [{"n": s.n, "excerpt": s.excerpt, "title": s.title} for s in state.sources]
+    # Every verified quote from each cited chunk, not just the first note's: a sentence that
+    # rests on a second quote from the same source must not be judged unsupported.
+    sources = [
+        {
+            "n": s.n,
+            "title": s.title,
+            "excerpts": [n.supporting_quote for n in state.notes if n.chunk_id == s.chunk_id]
+            or [s.excerpt],
+        }
+        for s in state.sources
+    ]
     prompt = render(
         load_prompt("judge"), question=state.question, answer=state.answer or "",
         sources=dumps(sources),

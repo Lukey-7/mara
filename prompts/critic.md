@@ -9,8 +9,8 @@ Assess:
 2. `conflicts`: pairs of claims that contradict each other or give incompatible numbers,
    dates or definitions. Quote both claims and explain the conflict in one sentence. Do not
    invent conflicts; two claims about different aspects of a topic are not a conflict.
-3. `new_sub_questions`: at most 3 NEW sub-questions that a further search could plausibly
-   answer and that would close a gap. Rephrase rather than repeat: use different wording,
+3. `new_sub_questions`: at most 3 NEW sub-questions, ONLY for sub-questions that have no
+   evidence notes at all, that a further search could plausibly answer. Rephrase rather than repeat: use different wording,
    narrower scope, or a different source (kb, pdf, web). Leave empty if another search would
    not help (e.g. the corpus clearly does not cover the topic).
 4. `needs_more_research`: true only if you proposed new sub-questions.

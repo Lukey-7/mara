@@ -41,9 +41,10 @@ class Critic:
         critique.new_sub_questions = normalise_sub_questions(
             critique.new_sub_questions, state.options.allowed_sources, start=len(state.plan) + 1
         )[:3]
-        critique.needs_more_research = bool(critique.new_sub_questions) and (
-            critique.needs_more_research or bool(critique.gaps)
-        )
+        # Loop only when a sub-question has NO verified evidence at all. The model's own
+        # "needs more" flag fired on 13 of 15 eval runs over thin-but-present evidence, which
+        # doubled cost for little gain; thinness is reported to the writer, not re-researched.
+        critique.needs_more_research = bool(critique.new_sub_questions) and bool(critique.gaps)
         state.critique = critique
         step.output_summary = (
             f"covered={len(critique.covered)} gaps={len(critique.gaps)} "
